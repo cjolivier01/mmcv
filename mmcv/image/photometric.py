@@ -5,6 +5,7 @@ from typing import Optional
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
+import torch
 
 from ..utils import is_tuple_of
 from .colorspace import bgr2gray, gray2bgr
@@ -23,7 +24,10 @@ def imnormalize(img, mean, std, to_rgb=True):
     Returns:
         ndarray: The normalized image.
     """
-    img = img.copy().astype(np.float32)
+    if isinstance(img, torch.Tensor):
+        img = img.to(torch.float)
+    else:
+        img = img.copy().astype(np.float32)
     return imnormalize_(img, mean, std, to_rgb)
 
 
@@ -40,13 +44,24 @@ def imnormalize_(img, mean, std, to_rgb=True):
         ndarray: The normalized image.
     """
     # cv2 inplace normalization does not accept uint8
-    assert img.dtype != np.uint8
-    mean = np.float64(mean.reshape(1, -1))
-    stdinv = 1 / np.float64(std.reshape(1, -1))
-    if to_rgb:
-        cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)  # inplace
-    cv2.subtract(img, mean, img)  # inplace
-    cv2.multiply(img, stdinv, img)  # inplace
+    if isinstance(img, torch.Tensor):
+        assert img.dtype != torch.uint8
+        mean = np.float64(mean.reshape(1, -1))
+        stdinv = 1 / np.float64(std.reshape(1, -1))
+        # if to_rgb:
+        #     cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)  # inplace
+        img -= torch.from_numpy(mean).to(img.device, non_blocking=True)
+        img *= torch.from_numpy(stdinv).to(img.device, non_blocking=True)
+        #cv2.subtract(img, mean, img)  # inplace
+        #cv2.multiply(img, stdinv, img)  # inplace
+    else:
+        assert img.dtype != np.uint8
+        mean = np.float64(mean.reshape(1, -1))
+        stdinv = 1 / np.float64(std.reshape(1, -1))
+        if to_rgb:
+            cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)  # inplace
+        cv2.subtract(img, mean, img)  # inplace
+        cv2.multiply(img, stdinv, img)  # inplace
     return img
 
 
