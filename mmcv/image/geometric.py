@@ -595,6 +595,9 @@ def impad(img: np.ndarray,
     }
     if isinstance(img, torch.Tensor):
         img = img.permute(2, 0, 1)
+        if isinstance(pad_val, tuple):
+            assert len(pad_val) == 3 and pad_val[0] == pad_val[1] and pad_val[1] == pad_val[2]
+            pad_val = pad_val[0]
         img = torch.nn.functional.pad(
             img,
             (padding[0],
