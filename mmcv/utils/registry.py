@@ -7,6 +7,34 @@ from typing import Any, Dict, Optional
 from .misc import deprecated_api_warning, is_seq_of
 
 
+def dict_to_arg_string(d, indent=0):
+    """
+    Converts a dictionary (or a list containing dictionaries) to a formatted string with key-value pairs like function arguments.
+    
+    :param d: The dictionary or list to convert.
+    :param indent: The indentation level (used for recursive calls).
+    :return: A formatted string.
+    """
+    indent_str = '    ' * indent  # Define the indentation string (4 spaces per indent level)
+    inner_indent_str = '    ' * (indent + 1)
+    
+    if isinstance(d, dict):
+        items = []
+        for key, value in d.items():
+            formatted_value = dict_to_arg_string(value, indent + 1)
+            items.append(f"\n{inner_indent_str}{key}={formatted_value}")
+        return f"dict({','.join(items)}\n{indent_str})"
+    elif isinstance(d, list):
+        items = [dict_to_arg_string(item, indent + 1) for item in d]
+        joined_items = ",".join(items)
+        if indent > 0:
+            return f'[\n{inner_indent_str}{joined_items}\n{indent_str}]'
+        else:
+            return f'[{joined_items}]'
+    else:
+        return repr(d)
+
+
 def build_from_cfg(cfg: Dict,
                    registry: 'Registry',
                    default_args: Optional[Dict] = None) -> Any:
