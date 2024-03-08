@@ -25,7 +25,8 @@ def imnormalize(img, mean, std, to_rgb=True):
         ndarray: The normalized image.
     """
     if isinstance(img, torch.Tensor):
-        img = img.to(torch.float)
+        if not torch.is_floating_point(img):
+            img = img.to(torch.float)
     else:
         img = img.copy().astype(np.float32)
     return imnormalize_(img, mean, std, to_rgb)
@@ -48,12 +49,16 @@ def imnormalize_(img, mean, std, to_rgb=True):
         assert img.dtype != torch.uint8
         mean = np.float64(mean.reshape(1, -1))
         stdinv = 1 / np.float64(std.reshape(1, -1))
-        # if to_rgb:
-        #     cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)  # inplace
-        img -= torch.from_numpy(mean).to(img.device, non_blocking=True)
-        img *= torch.from_numpy(stdinv).to(img.device, non_blocking=True)
-        #cv2.subtract(img, mean, img)  # inplace
-        #cv2.multiply(img, stdinv, img)  # inplace
+        img -= torch.from_numpy(mean).to(img.device)
+        img *= torch.from_numpy(stdinv).to(img.device)
+        if to_rgb:
+            if img.dim() == 3:
+                assert img.shape[-1] == 3, "Input image must have shape (3, H, W)"
+                img = img[:, :, [2, 1, 0]]  # Reorder the channels
+            else:
+                img.dim() == 4
+                assert img.shape[-1] == 3, "Input image must have shape (N, 3, H, W)"
+                img = img[:, :, :, [2, 1, 0]]  # Reorder the channels
     else:
         assert img.dtype != np.uint8
         mean = np.float64(mean.reshape(1, -1))
