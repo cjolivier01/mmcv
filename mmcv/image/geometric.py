@@ -4,6 +4,8 @@ from typing import List, Optional, Tuple, Union, no_type_check
 
 import cv2
 import numpy as np
+import torch
+from torchvision.transforms import functional as F
 
 from ..utils import to_2tuple
 from .io import imread_backend
@@ -112,6 +114,39 @@ def imresize(
         pil_image = Image.fromarray(img)
         pil_image = pil_image.resize(size, pillow_interp_codes[interpolation])
         resized_img = np.array(pil_image)
+    elif isinstance(img, torch.Tensor):
+        w = size[0]
+        h = size[1]
+        if img.dim() == 4:
+            # Probably doesn't work
+            permuted = img.shape[-1] == 3 or img.shape[-1] == 4
+            if permuted:
+                # H, W, C -> C, W, H
+                img = img.permute(0, 3, 2, 1)
+            assert img.shape[1] == 3 or img.shape[1] == 4
+            resized_img = F.resize(
+                img=img,
+                size=(w, h) if permuted else (h, w),
+                interpolation=pillow_interp_codes[interpolation],
+                antialias=True,
+            )
+            if permuted:
+                # C, W, H -> H, W, C
+                resized_img = resized_img.permute(0, 3, 2, 1)
+        else:
+            permuted = img.shape[-1] == 3 or img.shape[-1] == 4
+            if permuted:
+                # H, W, C -> C, W, H
+                img = img.permute(2, 1, 0)
+            resized_img = F.resize(
+                img=img,
+                size=(w, h) if permuted else (h, w),
+                interpolation=pillow_interp_codes[interpolation],
+                antialias=True,
+            )
+            if permuted:
+                # C, W, H -> H, W, C
+                resized_img = resized_img.permute(2, 1, 0)
     else:
         resized_img = cv2.resize(
             img, size, dst=out, interpolation=cv2_interp_codes[interpolation])
@@ -558,14 +593,26 @@ def impad(img: np.ndarray,
         'reflect': cv2.BORDER_REFLECT_101,
         'symmetric': cv2.BORDER_REFLECT
     }
-    img = cv2.copyMakeBorder(
-        img,
-        padding[1],
-        padding[3],
-        padding[0],
-        padding[2],
-        border_type[padding_mode],
-        value=pad_val)
+    if isinstance(img, torch.Tensor):
+        img = img.permute(2, 0, 1)
+        img = torch.nn.functional.pad(
+            img,
+            (padding[0],
+            padding[2],
+            padding[1],
+            padding[3]),
+            padding_mode,
+            value=pad_val)
+        img = img.permute(1, 2, 0)
+    else:
+        img = cv2.copyMakeBorder(
+            img,
+            padding[1],
+            padding[3],
+            padding[0],
+            padding[2],
+            border_type[padding_mode],
+            value=pad_val)
 
     return img
 
