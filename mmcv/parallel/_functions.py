@@ -67,12 +67,18 @@ def get_input_device(input: Union[List, Tensor]) -> int:
 class Scatter:
 
     @staticmethod
+    def _device_index(device: Union[int, torch.device]) -> int:
+        if isinstance(device, torch.device):
+            return device.index
+        return device
+
+    @staticmethod
     def forward(target_gpus: List[int], input: Union[List, Tensor]) -> tuple:
         input_device = get_input_device(input)
         streams = None
         if input_device == -1 and target_gpus != [-1]:
             # Perform CPU to GPU copies in a background stream
-            streams = [_get_stream(device) for device in target_gpus]
+            streams = [_get_stream(Scatter._device_index(device)) for device in target_gpus]
 
         outputs = scatter(input, target_gpus, streams)
         # Synchronize with the copy stream
