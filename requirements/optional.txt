@@ -1,2 +1,5 @@
-ninja
-psutil
+cityscapesscripts
+emoji
+fairscale
+imagecorruptions
+scikit-learn

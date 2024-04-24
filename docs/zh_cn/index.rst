@@ -1,63 +1,63 @@
-欢迎来到 MMCV 的中文文档！
-=============================
+Welcome to MMDetection's documentation!
+=======================================
 
-您可以在页面左下角切换中英文文档。
+.. toctree::
+   :maxdepth: 1
+   :caption: 开始你的第一步
+
+   overview.md
+   get_started.md
 
 .. toctree::
    :maxdepth: 2
-   :caption: 介绍与安装
+   :caption: 使用指南
 
-   get_started/introduction.md
-   get_started/installation.md
-   get_started/build.md
-   get_started/article.md
-   get_started/api_reference.md
+   user_guides/index.rst
 
 .. toctree::
    :maxdepth: 2
-   :caption: 深入理解 MMCV
+   :caption: 进阶教程
 
-   understand_mmcv/data_process.md
-   understand_mmcv/data_transform.md
-   understand_mmcv/visualization.md
-   understand_mmcv/cnn.md
-   understand_mmcv/ops.md
+   advanced_guides/index.rst
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 迁移版本
+
+   migration/migration.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 接口文档（英文）
+
+   api.rst
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 模型仓库
+
+   model_zoo.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 说明
+
+   notes/contribution_guide.md
+   notes/projects.md
+   notes/faq.md
+   notes/compatibility.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 文章
+
+   article.md
 
 .. toctree::
    :caption: 语言切换
 
    switch_language.md
 
-.. toctree::
-   :maxdepth: 2
-   :caption: 兼容性
-
-   compatibility.md
-
-.. toctree::
-
-   faq.md
-
-.. toctree::
-   :maxdepth: 2
-   :caption: 社区
-
-   community/contributing.md
-   community/pr.md
-   community/code_style.md
-
-.. toctree::
-   :maxdepth: 1
-   :caption: API 文档
-
-   mmcv.image <api/image>
-   mmcv.video <api/video>
-   mmcv.visualization <api/visualization>
-   mmcv.cnn <api/cnn>
-   mmcv.ops <api/ops>
-   mmcv.transforms <api/transforms>
-   mmcv.arraymisc <api/arraymisc>
-   mmcv.utils <api/utils>
 
 
 Indices and tables

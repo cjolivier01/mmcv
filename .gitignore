@@ -6,9 +6,6 @@ __pycache__/
 # C extensions
 *.so
 
-# PyTorch checkpoint
-*.pth
-
 # Distribution / packaging
 .Python
 build/
@@ -27,8 +24,6 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-mlu-ops/
-mlu-ops.*
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -70,9 +65,7 @@ instance/
 
 # Sphinx documentation
 docs/en/_build/
-docs/en/api/generated/
 docs/zh_cn/_build/
-docs/zh_cn/api/generated/
 
 # PyBuilder
 target/
@@ -110,16 +103,21 @@ venv.bak/
 
 # mypy
 .mypy_cache/
-
-# editors and IDEs
-.idea/
-.vscode/
-
-# custom
+data/
+data
+.vscode
+.idea
 .DS_Store
 
-# datasets and logs and checkpoints
-data/
-work_dir/
+# custom
+*.pkl
+*.pkl.json
+*.log.json
+docs/modelzoo_statistics.md
+mmdet/.mim
+work_dirs/
 
-src/
+# Pytorch
+*.pth
+*.py~
+*.sh~

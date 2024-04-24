@@ -21,93 +21,12 @@ jobs:
       - run:
           name: Linting
           command: pre-commit run --all-files
-  build_without_torch:
-    parameters:
-      # The python version must match available image tags in
-      # https://circleci.com/developer/images/image/cimg/python
-      python:
-        type: string
-        default: "3.7.4"
-    docker:
-      - image: cimg/python:<< parameters.python >>
-    resource_class: large
-    steps:
-      - checkout
       - run:
-          name: Install Libraries
+          name: Check docstring coverage
           command: |
-            sudo apt-get update
-            sudo apt-get install -y ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 libgl1-mesa-glx libjpeg-dev zlib1g-dev libtinfo-dev libncurses5 ffmpeg libturbojpeg
-      - run:
-          name: Upgrade pip
-          command: |
-            pip install pip --upgrade
-            pip --version
-      - run:
-          name: Install MMEngine from main branch
-          command: pip install git+https://github.com/open-mmlab/mmengine.git@main
-      - run:
-          name: Build MMCV from source
-          command: pip install -e . -v
-          environment:
-            MMCV_WITH_OPS: 0
-      - run:
-          name: Install unit tests dependencies
-          command: pip install -r requirements/test.txt
-      - run:
-          name: Run unit tests
-          command: pytest tests/test_image tests/test_transforms tests/test_video tests/test_arraymisc.py tests/test_visualization.py tests/test_utils/test_env.py --ignore=tests/test_image/test_io.py
-  build_without_ops:
-    parameters:
-      # The python version must match available image tags in
-      # https://circleci.com/developer/images/image/cimg/python
-      python:
-        type: string
-        default: "3.7.4"
-      torch:
-        type: string
-      torchvision:
-        type: string
-    docker:
-      - image: cimg/python:<< parameters.python >>
-    resource_class: large
-    steps:
-      - checkout
-      - run:
-          name: Install Libraries
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 libgl1-mesa-glx libjpeg-dev zlib1g-dev libtinfo-dev libncurses5 ffmpeg libturbojpeg
-      - run:
-          name: Configure Python & pip
-          command: |
-            pip install --upgrade pip
-            pip install wheel
-      - run:
-          name: Install PyTorch
-          command: pip install torch==<< parameters.torch >>+cpu torchvision==<< parameters.torchvision >>+cpu -f https://download.pytorch.org/whl/torch_stable.html
-      - run:
-          name: Install MMEngine from main branch
-          command: pip install git+https://github.com/open-mmlab/mmengine.git@main
-      - run:
-          name: Create sdist and untar
-          command: |
-            sed -i "s/os.getenv('MMCV_WITH_OPS', '1')/os.getenv('MMCV_WITH_OPS', '0')/g" setup.py
-            python setup.py sdist
-            tar zxvf dist/mmcv* -C /tmp
-            rm -r mmcv
-      - run:
-          name: Build and install from sdist
-          command: |
-            pushd /tmp/mmcv*
-            pip install -e . -v
-            popd
-      - run:
-          name: Install unit tests dependencies
-          command: pip install -r requirements/test.txt
-      - run:
-          name: Run unit tests
-          command: pytest tests --ignore=tests/test_ops
+            pip install interrogate
+            interrogate -v --ignore-init-method --ignore-module --ignore-nested-functions --ignore-magic --ignore-regex "__repr__" --fail-under 85 mmdet
+
   build_cpu:
     parameters:
       # The python version must match available image tags in
@@ -127,7 +46,7 @@ jobs:
           name: Install Libraries
           command: |
             sudo apt-get update
-            sudo apt-get install -y ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 libgl1-mesa-glx libjpeg-dev zlib1g-dev libtinfo-dev libncurses5 ffmpeg libturbojpeg
+            sudo apt-get install -y ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 libgl1-mesa-glx libjpeg-dev zlib1g-dev libtinfo-dev libncurses5
       - run:
           name: Configure Python & pip
           command: |
@@ -135,50 +54,61 @@ jobs:
             pip install wheel
       - run:
           name: Install PyTorch
-          command: pip install torch==<< parameters.torch >>+cpu torchvision==<< parameters.torchvision >>+cpu -f https://download.pytorch.org/whl/torch_stable.html
-      - run:
-          name: Install MMEngine from main branch
-          command: pip install git+https://github.com/open-mmlab/mmengine.git@main
-      - run:
-          name: Install ninja to speed the compilation
-          command: pip install ninja
-      - run:
-          name: Create sdist and untar
           command: |
-            python setup.py sdist
-            tar zxvf dist/mmcv* -C /tmp
-            rm -r mmcv
+            python -V
+            python -m pip install torch==<< parameters.torch >>+cpu torchvision==<< parameters.torchvision >>+cpu -f https://download.pytorch.org/whl/torch_stable.html
+      - when:
+          condition:
+            equal: ["3.9.0", << parameters.python >>]
+          steps:
+            - run: pip install "protobuf <= 3.20.1" && sudo apt-get update && sudo apt-get -y install libprotobuf-dev protobuf-compiler cmake
+            - run: pip install dsdl
       - run:
-          name: Build and install from sdist
+          name: Install mmdet dependencies
+          # numpy may be downgraded after building pycocotools, which causes `ImportError: numpy.core.multiarray failed to import`
+          # force reinstall pycocotools to ensure pycocotools being built under the currenct numpy
           command: |
-            pushd /tmp/mmcv*
-            pip install -e . -v
-            popd
+            python -m pip install git+ssh://git@github.com/open-mmlab/mmengine.git@main
+            pip install -U openmim
+            mim install 'mmcv >= 2.0.0rc4'
+            pip install -r requirements/tests.txt -r requirements/optional.txt
+            pip install --force-reinstall pycocotools
+            pip install albumentations>=0.3.2 --no-binary imgaug,albumentations
+            pip install -r requirements/tracking.txt
+            pip install git+https://github.com/cocodataset/panopticapi.git
+            pip install git+https://github.com/JonathonLuiten/TrackEval.git
       - run:
-          name: Install unit tests dependencies
-          command: pip install -r requirements/test.txt
-      - run:
-          name: Run unit tests
+          name: Build and install
           command: |
-            coverage run --branch --source mmcv -m pytest tests/
-            coverage xml
-            coverage report -m
+            pip install -e .
+      - run:
+          name: Run unittests
+          command: |
+            python -m coverage run --branch --source mmdet -m pytest tests/
+            python -m coverage xml
+            python -m coverage report -m
+
   build_cuda:
     parameters:
       torch:
         type: string
       cuda:
         type: enum
-        enum: ["10.1", "10.2", "11.1", "11.7", "11.8"]
+        enum: ["11.1", "11.7", "11.8"]
       cudnn:
         type: integer
-        default: 7
+        default: 8
     machine:
       image: linux-cuda-11:default
-      docker_layer_caching: true
+      # docker_layer_caching: true
     resource_class: gpu.nvidia.small.multi
     steps:
       - checkout
+      - run:
+          # CLoning repos in VM since Docker doesn't have access to the private key
+          name: Clone Repos
+          command: |
+            git clone -b main --depth 1 ssh://git@github.com/open-mmlab/mmengine.git /home/circleci/mmengine
       - run:
           name: Install nvidia-container-toolkit and Restart Docker
           command: |
@@ -188,23 +118,30 @@ jobs:
       - run:
           name: Build Docker image
           command: |
-            docker build .circleci/docker -t mmcv:gpu --build-arg PYTORCH=<< parameters.torch >> --build-arg CUDA=<< parameters.cuda >> --build-arg CUDNN=<< parameters.cudnn >>
-            docker run --gpus all -t -d -v /home/circleci/project:/mmcv -w /mmcv --name mmcv mmcv:gpu
+            docker build .circleci/docker -t mmdetection:gpu --build-arg PYTORCH=<< parameters.torch >> --build-arg CUDA=<< parameters.cuda >> --build-arg CUDNN=<< parameters.cudnn >>
+            docker run --gpus all -t -d -v /home/circleci/project:/mmdetection -v /home/circleci/mmengine:/mmengine -w /mmdetection --name mmdetection mmdetection:gpu
+            docker exec mmdetection apt-get install -y git
       - run:
-          name: Install MMEngine from main branch
-          command: docker exec mmcv pip install git+https://github.com/open-mmlab/mmengine.git@main
+          name: Install mmdet dependencies
+          command: |
+            docker exec mmdetection pip install -e /mmengine
+            docker exec mmdetection pip install -U openmim
+            docker exec mmdetection mim install 'mmcv >= 2.0.0rc4'
+            docker exec mmdetection pip install -r requirements/tests.txt -r requirements/optional.txt
+            docker exec mmdetection pip install pycocotools
+            docker exec mmdetection pip install albumentations>=0.3.2 --no-binary imgaug,albumentations
+            docker exec mmdetection pip install -r requirements/tracking.txt
+            docker exec mmdetection pip install git+https://github.com/cocodataset/panopticapi.git
+            docker exec mmdetection pip install git+https://github.com/JonathonLuiten/TrackEval.git
+            docker exec mmdetection python -c 'import mmcv; print(mmcv.__version__)'
       - run:
-          name: Install ninja to speed the compilation
-          command: docker exec mmcv pip install ninja
+          name: Build and install
+          command: |
+            docker exec mmdetection pip install -e .
       - run:
-          name: Build MMCV from source
-          command: docker exec mmcv pip install -e . -v
-      - run:
-          name: Install unit tests dependencies
-          command: docker exec mmcv pip install -r requirements/test.txt
-      - run:
-          name: Run unit tests
-          command: docker exec mmcv python -m pytest tests/
+          name: Run unittests
+          command: |
+            docker exec mmdetection python -m pytest tests/
 
 workflows:
   pr_stage_lint:
@@ -215,84 +152,59 @@ workflows:
           filters:
             branches:
               ignore:
-                - main
+                - dev-3.x
   pr_stage_test:
     when:
-      not:
-        << pipeline.parameters.lint_only >>
+      not: << pipeline.parameters.lint_only >>
     jobs:
       - lint:
           name: lint
           filters:
             branches:
               ignore:
-                - main
-      - build_without_torch:
-          name: build_without_torch
-          requires:
-            - lint
-      - build_without_ops:
-          name: build_without_ops
-          torch: 1.8.1
-          torchvision: 0.9.1
-          requires:
-            - build_without_torch
+                - dev-3.x
       - build_cpu:
           name: minimum_version_cpu
-          torch: 1.8.1
-          torchvision: 0.9.1
-          python: 3.7.4
+          torch: 1.8.0
+          torchvision: 0.9.0
+          python: 3.7.16
           requires:
-            - build_without_ops
+            - lint
       - build_cpu:
           name: maximum_version_cpu
-          torch: 2.1.0
-          torchvision: 0.16.0
+          torch: 2.0.0
+          torchvision: 0.15.1
           python: 3.9.0
           requires:
             - minimum_version_cpu
-      - hold_cuda_test:
+      - hold:
           type: approval
+          requires:
+            - maximum_version_cpu
       - build_cuda:
-          name: minimum_version_gpu
+          name: mainstream_version_gpu
           torch: 1.8.1
           # Use double quotation mark to explicitly specify its type
           # as string instead of number
-          cuda: "10.2"
+          cuda: "11.1"
           requires:
-            - hold_cuda_test
+            - hold
       - build_cuda:
           name: maximum_version_gpu
-          torch: 2.1.0
-          # Use double quotation mark to explicitly specify its type
-          # as string instead of number
-          cuda: "11.8"
+          torch: 2.0.0
+          cuda: "11.7"
           cudnn: 8
           requires:
-            - hold_cuda_test
+            - hold
   merge_stage_test:
     when:
-      not:
-        << pipeline.parameters.lint_only >>
+      not: << pipeline.parameters.lint_only >>
     jobs:
       - build_cuda:
           name: minimum_version_gpu
-          torch: 1.8.1
-          # Use double quotation mark to explicitly specify its type
-          # as string instead of number
-          cuda: "10.2"
+          torch: 1.8.0
+          cuda: "11.1"
           filters:
             branches:
               only:
-                - main
-      - build_cuda:
-          name: maximum_version_gpu
-          torch: 2.1.0
-          # Use double quotation mark to explicitly specify its type
-          # as string instead of number
-          cuda: "11.8"
-          cudnn: 8
-          filters:
-            branches:
-              only:
-                - main
+                - dev-3.x
