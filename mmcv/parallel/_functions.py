@@ -70,6 +70,8 @@ class Scatter:
     def _device_index(device: Union[int, torch.device]) -> int:
         if isinstance(device, torch.device):
             return device.index
+        elif isinstance(device, int):
+            return torch.device("cuda", device)
         return device
 
     @staticmethod
