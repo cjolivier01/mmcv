@@ -17,10 +17,10 @@ def _check_balance(*args, **kwargs):
 # on the NPU, the corresponding# devices_properties does not
 # have this property and cannot be checked. So we masked the
 # _check_balance function in DataParallel to make initialization pass.
-for m in sys.modules:
-    if m.startswith('torch') or 'mmcv' in m:
-        if hasattr(sys.modules[m], '_check_balance'):
-            setattr(sys.modules[m], '_check_balance', _check_balance)
+# for m in sys.modules:
+#     if m.startswith('torch') or 'mmcv' in m:
+#         if hasattr(sys.modules[m], '_check_balance'):
+#             setattr(sys.modules[m], '_check_balance', _check_balance)
 
 
 class NPUDataParallel(MMDataParallel):
