@@ -4,7 +4,6 @@
 import sys
 
 import torch
-
 from mmcv.device.scatter_gather import scatter_kwargs
 from mmcv.parallel import MMDataParallel
 
