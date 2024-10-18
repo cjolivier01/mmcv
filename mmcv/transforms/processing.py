@@ -1175,7 +1175,7 @@ class RandomFlip(BaseTransform):
             assert 0 <= sum(prob) <= 1
         elif isinstance(prob, float):
             assert 0 <= prob <= 1
-        else:
+        elif prob is not None:
             raise ValueError(f'probs must be float or list of float, but \
                               got `{type(prob)}`.')
         self.prob = prob
