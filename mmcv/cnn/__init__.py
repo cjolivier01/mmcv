@@ -28,4 +28,4 @@ __all__ = [
     'MaxPool2d', 'ConvTranspose3d', 'MaxPool3d', 'Conv3d', 'fuse_conv_bn',
     'get_model_complexity_info', 'Conv2dRFSearchOp', 'RFSearchHook'
 ]
-]
+
