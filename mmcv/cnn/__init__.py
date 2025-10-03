@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from .alexnet import AlexNet
+
 # yapf: disable
 from .bricks import (ContextBlock, Conv2d, Conv3d, ConvAWS2d, ConvModule,
                      ConvTranspose2d, ConvTranspose3d, ConvWS2d,
@@ -8,13 +9,12 @@ from .bricks import (ContextBlock, Conv2d, Conv3d, ConvAWS2d, ConvModule,
                      NonLocal1d, NonLocal2d, NonLocal3d, Scale, Swish,
                      build_activation_layer, build_conv_layer,
                      build_norm_layer, build_padding_layer, build_plugin_layer,
-                     build_upsample_layer, conv_ws_2d, is_norm)
+                     build_upsample_layer, conv_ws_2d, is_norm,)
+
 # yapf: enable
 from .resnet import ResNet, make_res_layer
 from .rfsearch import Conv2dRFSearchOp, RFSearchHook
 from .utils import fuse_conv_bn, get_model_complexity_info
-from mmengine.model import (constant_init, kaiming_init, normal_init,
-                            xavier_init)
 from .vgg import VGG, make_vgg_layer
 
 __all__ = [
@@ -26,6 +26,6 @@ __all__ = [
     'Scale', 'conv_ws_2d', 'ConvAWS2d', 'ConvWS2d',
     'DepthwiseSeparableConvModule', 'Linear', 'Conv2d', 'ConvTranspose2d',
     'MaxPool2d', 'ConvTranspose3d', 'MaxPool3d', 'Conv3d', 'fuse_conv_bn',
-    'get_model_complexity_info', 'Conv2dRFSearchOp', 'RFSearchHook',
-    'constant_init', 'kaiming_init', 'normal_init', 'xavier_init'
+    'get_model_complexity_info', 'Conv2dRFSearchOp', 'RFSearchHook'
+]
 ]
