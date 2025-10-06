@@ -1,11 +1,11 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import numbers
+import warnings
 from typing import List, Optional, Tuple, Union, no_type_check
 
 import cv2
 import numpy as np
 from mmengine.utils import to_2tuple
-import warnings
 
 # Optional torch/kornia support for GPU tensors
 try:  # pragma: no cover - optional dependency
@@ -18,9 +18,8 @@ except Exception:  # pragma: no cover - torch optional
 try:  # pragma: no cover - optional dependency
     import kornia as K  # noqa: F401
     from kornia.geometry.transform import (
-        warp_affine as kornia_warp_affine,
-        get_rotation_matrix2d as kornia_get_rotation_matrix2d,
-    )
+        get_rotation_matrix2d as kornia_get_rotation_matrix2d,)
+    from kornia.geometry.transform import warp_affine as kornia_warp_affine
 except Exception:  # pragma: no cover - kornia optional
     kornia_warp_affine = None  # type: ignore
     kornia_get_rotation_matrix2d = None  # type: ignore
