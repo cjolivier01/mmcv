@@ -290,7 +290,8 @@ def batched_nms(boxes: Tensor,
         else:
             max_coordinate = boxes.max()
             offsets = idxs.to(boxes) * (
-                max_coordinate + torch.tensor(1).to(boxes))
+                max_coordinate + torch.tensor(1).to(boxes, non_blocking=True)
+            )
             boxes_for_nms = boxes + offsets[:, None]
 
     nms_op = nms_cfg_.pop('type', 'nms')
