@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Tuple, Union
+import os
 
 import numpy as np
 import torch
@@ -6,6 +7,54 @@ from mmengine.utils import deprecated_api_warning
 from torch import Tensor
 
 from ..utils import ext_loader
+
+# Prefer torchvision's CUDA NMS to avoid explicit synchronizations inside
+# MMCV's custom extension when available. Fallback to MMCV ext otherwise.
+try:  # runtime optional import
+    from torchvision.ops import nms as tv_nms  # type: ignore
+    _HAS_TV_NMS = True
+except Exception:  # pragma: no cover - optional
+    _HAS_TV_NMS = False
+
+# Select NMS backend
+_NMS_BACKEND = os.environ.get(
+    "HM_NMS_BACKEND",
+    # Default to torchvision for performance; override with HM_NMS_BACKEND=torch for pure PyTorch.
+    "torchvision" if _HAS_TV_NMS else "torch",
+).lower()
+
+
+def _torch_iou_one_to_many(box: torch.Tensor, boxes: torch.Tensor) -> torch.Tensor:
+    # box: (4,) boxes: (N,4) in xyxy
+    x1 = torch.maximum(box[0], boxes[:, 0])
+    y1 = torch.maximum(box[1], boxes[:, 1])
+    x2 = torch.minimum(box[2], boxes[:, 2])
+    y2 = torch.minimum(box[3], boxes[:, 3])
+    inter = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
+    area1 = (box[2] - box[0]).clamp(min=0) * (box[3] - box[1]).clamp(min=0)
+    area2 = (boxes[:, 2] - boxes[:, 0]).clamp(min=0) * (boxes[:, 3] - boxes[:, 1]).clamp(min=0)
+    union = area1 + area2 - inter + 1e-6
+    return inter / union
+
+
+def _torch_nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float) -> torch.Tensor:
+    # Pure-PyTorch NMS without calling extension ops. Stays on device stream.
+    if boxes.numel() == 0:
+        return boxes.new_zeros((0,), dtype=torch.long)
+    # sort by score desc
+    order = scores.sort(descending=True).indices
+    keep_inds: List[torch.Tensor] = []
+    while order.numel() > 0:
+        i = order[0]
+        keep_inds.append(i)
+        if order.numel() == 1:
+            break
+        iou = _torch_iou_one_to_many(boxes[i], boxes[order[1:]])
+        remaining_mask = iou <= float(iou_threshold)
+        order = order[1:][remaining_mask]
+    if keep_inds:
+        return torch.stack(keep_inds).to(dtype=torch.long, device=boxes.device)
+    return boxes.new_zeros((0,), dtype=torch.long)
 
 ext_module = ext_loader.load_ext(
     '_ext', ['nms', 'softnms', 'nms_match', 'nms_rotated', 'nms_quadri'])
@@ -24,8 +73,18 @@ class NMSop(torch.autograd.Function):
             valid_inds = torch.nonzero(
                 valid_mask, as_tuple=False).squeeze(dim=1)
 
-        inds = ext_module.nms(
-            bboxes, scores, iou_threshold=float(iou_threshold), offset=offset)
+        # Backend selection: prefer pure torch if requested, then torchvision, else MMCV ext
+        if isinstance(bboxes, torch.Tensor) and isinstance(scores, torch.Tensor):
+            if _NMS_BACKEND == "torch":
+                inds = _torch_nms(bboxes, scores, float(iou_threshold))
+            elif _NMS_BACKEND == "torchvision" and _HAS_TV_NMS:
+                inds = tv_nms(bboxes, scores, float(iou_threshold))
+            else:
+                inds = ext_module.nms(
+                    bboxes, scores, iou_threshold=float(iou_threshold), offset=offset)
+        else:
+            inds = ext_module.nms(
+                bboxes, scores, iou_threshold=float(iou_threshold), offset=offset)
 
         if max_num > 0:
             inds = inds[:max_num]
@@ -124,9 +183,33 @@ def nms(boxes: array_like_type,
     assert boxes.size(0) == scores.size(0)
     assert offset in (0, 1)
 
-    inds = NMSop.apply(boxes, scores, iou_threshold, offset, score_threshold,
-                       max_num)
-    dets = torch.cat((boxes[inds], scores[inds].reshape(-1, 1)), dim=1)
+    # Use selected backend to avoid extension syncs when requested.
+    is_filtering_by_score = float(score_threshold) > 0
+    if isinstance(boxes, Tensor) and isinstance(scores, Tensor):
+        if is_filtering_by_score:
+            valid_mask = scores > score_threshold
+            boxes_f = boxes[valid_mask]
+            scores_f = scores[valid_mask]
+            valid_inds = torch.nonzero(valid_mask, as_tuple=False).squeeze(dim=1)
+        else:
+            boxes_f, scores_f = boxes, scores
+        if _NMS_BACKEND == "torch":
+            keep = _torch_nms(boxes_f, scores_f, float(iou_threshold))
+        elif _NMS_BACKEND == "torchvision" and _HAS_TV_NMS:
+            keep = tv_nms(boxes_f, scores_f, float(iou_threshold))
+        else:
+            # use autograd function that calls ext_module
+            keep = NMSop.apply(boxes_f, scores_f, iou_threshold, offset, score_threshold, max_num)
+        if max_num > 0:
+            keep = keep[:max_num]
+        if is_filtering_by_score:
+            inds = valid_inds[keep]
+        else:
+            inds = keep
+        dets = torch.cat((boxes[inds], scores[inds].reshape(-1, 1)), dim=1)
+    else:
+        inds = NMSop.apply(boxes, scores, iou_threshold, offset, score_threshold, max_num)
+        dets = torch.cat((boxes[inds], scores[inds].reshape(-1, 1)), dim=1)
     if is_numpy:
         dets = dets.cpu().numpy()
         inds = inds.cpu().numpy()
