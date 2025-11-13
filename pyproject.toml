@@ -1,0 +1,14 @@
+[build-system]
+# Use modern PEP 517/660 build with setuptools
+# Torch is required at build time so that BuildExtension is available
+# and extensions are compiled instead of being skipped.
+requires = [
+  "setuptools>=68",
+  "wheel",
+  "torch>=1.8",
+  # ninja speeds up compilation for torch extensions (optional on Windows)
+  "ninja; platform_system != 'Windows'",
+  "packaging",
+]
+build-backend = "setuptools.build_meta"
+
