@@ -12,28 +12,32 @@ from mmengine.model import BaseModule, ModuleList, Sequential
 from mmengine.registry import MODELS
 from mmengine.utils import deprecated_api_warning, to_2tuple
 
-from mmcv.cnn import (Linear, build_activation_layer, build_conv_layer,
-                      build_norm_layer)
+from mmcv.cnn import Linear, build_activation_layer, build_conv_layer, build_norm_layer
 from .drop import build_dropout
 from .scale import LayerScale
 
 # Avoid BC-breaking of importing MultiScaleDeformableAttention from this file
 try:
-    from mmcv.ops.multi_scale_deform_attn import \
-        MultiScaleDeformableAttention  # noqa F401
+    from mmcv.ops.multi_scale_deform_attn import (  # noqa: F401
+        MultiScaleDeformableAttention,
+    )
+
     warnings.warn(
         ImportWarning(
-            '``MultiScaleDeformableAttention`` has been moved to '
-            '``mmcv.ops.multi_scale_deform_attn``, please change original path '  # noqa E501
-            '``from mmcv.cnn.bricks.transformer import MultiScaleDeformableAttention`` '  # noqa E501
-            'to ``from mmcv.ops.multi_scale_deform_attn import MultiScaleDeformableAttention`` '  # noqa E501
-        ))
+            "``MultiScaleDeformableAttention`` has been moved to "
+            "``mmcv.ops.multi_scale_deform_attn``, please change original path "  # noqa E501
+            "``from mmcv.cnn.bricks.transformer import MultiScaleDeformableAttention`` "  # noqa E501
+            "to ``from mmcv.ops.multi_scale_deform_attn import MultiScaleDeformableAttention`` "  # noqa E501
+        )
+    )
 
 except ImportError:
-    warnings.warn('Fail to import ``MultiScaleDeformableAttention`` from '
-                  '``mmcv.ops.multi_scale_deform_attn``, '
-                  'You should install ``mmcv`` rather than ``mmcv-lite`` '
-                  'if you need this module. ')
+    warnings.warn(
+        "Fail to import ``MultiScaleDeformableAttention`` from "
+        "``mmcv.ops.multi_scale_deform_attn``, "
+        "You should install ``mmcv`` rather than ``mmcv-lite`` "
+        "if you need this module. "
+    )
 
 
 def build_positional_encoding(cfg, default_args=None):
@@ -96,9 +100,9 @@ class AdaptivePadding(nn.Module):
         >>> assert (out.shape[2], out.shape[3]) == (16, 32)
     """
 
-    def __init__(self, kernel_size=1, stride=1, dilation=1, padding='corner'):
+    def __init__(self, kernel_size=1, stride=1, dilation=1, padding="corner"):
         super().__init__()
-        assert padding in ('same', 'corner')
+        assert padding in ("same", "corner")
 
         kernel_size = to_2tuple(kernel_size)
         stride = to_2tuple(stride)
@@ -124,10 +128,14 @@ class AdaptivePadding(nn.Module):
         stride_h, stride_w = self.stride
         output_h = math.ceil(input_h / stride_h)
         output_w = math.ceil(input_w / stride_w)
-        pad_h = max((output_h - 1) * stride_h +
-                    (kernel_h - 1) * self.dilation[0] + 1 - input_h, 0)
-        pad_w = max((output_w - 1) * stride_w +
-                    (kernel_w - 1) * self.dilation[1] + 1 - input_w, 0)
+        pad_h = max(
+            (output_h - 1) * stride_h + (kernel_h - 1) * self.dilation[0] + 1 - input_h,
+            0,
+        )
+        pad_w = max(
+            (output_w - 1) * stride_w + (kernel_w - 1) * self.dilation[1] + 1 - input_w,
+            0,
+        )
         return pad_h, pad_w
 
     def forward(self, x):
@@ -141,13 +149,12 @@ class AdaptivePadding(nn.Module):
         """
         pad_h, pad_w = self.get_pad_shape(x.size()[-2:])
         if pad_h > 0 or pad_w > 0:
-            if self.padding == 'corner':
+            if self.padding == "corner":
                 x = F.pad(x, [0, pad_w, 0, pad_h])
-            elif self.padding == 'same':
-                x = F.pad(x, [
-                    pad_w // 2, pad_w - pad_w // 2, pad_h // 2,
-                    pad_h - pad_h // 2
-                ])
+            elif self.padding == "same":
+                x = F.pad(
+                    x, [pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2]
+                )
         return x
 
 
@@ -179,18 +186,20 @@ class PatchEmbed(BaseModule):
             Default: None.
     """
 
-    def __init__(self,
-                 in_channels=3,
-                 embed_dims=768,
-                 conv_type='Conv2d',
-                 kernel_size=16,
-                 stride=16,
-                 padding='corner',
-                 dilation=1,
-                 bias=True,
-                 norm_cfg=None,
-                 input_size=None,
-                 init_cfg=None):
+    def __init__(
+        self,
+        in_channels=3,
+        embed_dims=768,
+        conv_type="Conv2d",
+        kernel_size=16,
+        stride=16,
+        padding="corner",
+        dilation=1,
+        bias=True,
+        norm_cfg=None,
+        input_size=None,
+        init_cfg=None,
+    ):
         super().__init__(init_cfg=init_cfg)
 
         self.embed_dims = embed_dims
@@ -206,7 +215,8 @@ class PatchEmbed(BaseModule):
                 kernel_size=kernel_size,
                 stride=stride,
                 dilation=dilation,
-                padding=padding)
+                padding=padding,
+            )
             # disable the padding of conv
             padding = 0
         else:
@@ -221,7 +231,8 @@ class PatchEmbed(BaseModule):
             stride=stride,
             padding=padding,
             dilation=dilation,
-            bias=bias)
+            bias=bias,
+        )
 
         if norm_cfg is not None:
             self.norm = build_norm_layer(norm_cfg, embed_dims)[1]
@@ -242,10 +253,12 @@ class PatchEmbed(BaseModule):
                 input_size = (input_h, input_w)
 
             # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
-            h_out = (input_size[0] + 2 * padding[0] - dilation[0] *
-                     (kernel_size[0] - 1) - 1) // stride[0] + 1
-            w_out = (input_size[1] + 2 * padding[1] - dilation[1] *
-                     (kernel_size[1] - 1) - 1) // stride[1] + 1
+            h_out = (
+                input_size[0] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+            ) // stride[0] + 1
+            w_out = (
+                input_size[1] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+            ) // stride[1] + 1
             self.init_out_size = (h_out, w_out)
         else:
             self.init_input_size = None
@@ -307,16 +320,18 @@ class PatchMerging(BaseModule):
             Default: None.
     """
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size=2,
-                 stride=None,
-                 padding='corner',
-                 dilation=1,
-                 bias=False,
-                 norm_cfg=dict(type='LN'),
-                 init_cfg=None):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size=2,
+        stride=None,
+        padding="corner",
+        dilation=1,
+        bias=False,
+        norm_cfg=dict(type="LN"),
+        init_cfg=None,
+    ):
         super().__init__(init_cfg=init_cfg)
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -334,7 +349,8 @@ class PatchMerging(BaseModule):
                 kernel_size=kernel_size,
                 stride=stride,
                 dilation=dilation,
-                padding=padding)
+                padding=padding,
+            )
             # disable the padding of unfold
             padding = 0
         else:
@@ -342,10 +358,8 @@ class PatchMerging(BaseModule):
 
         padding = to_2tuple(padding)
         self.sampler = nn.Unfold(
-            kernel_size=kernel_size,
-            dilation=dilation,
-            padding=padding,
-            stride=stride)
+            kernel_size=kernel_size, dilation=dilation, padding=padding, stride=stride
+        )
 
         sample_dim = kernel_size[0] * kernel_size[1] * in_channels
 
@@ -371,13 +385,12 @@ class PatchMerging(BaseModule):
               (Merged_H, Merged_W).
         """
         B, L, C = x.shape
-        assert isinstance(input_size, Sequence), f'Expect ' \
-                                                 f'input_size is ' \
-                                                 f'`Sequence` ' \
-                                                 f'but get {input_size}'
+        assert isinstance(input_size, Sequence), (
+            f"Expect " f"input_size is " f"`Sequence` " f"but get {input_size}"
+        )
 
         H, W = input_size
-        assert L == H * W, 'input feature has wrong size'
+        assert L == H * W, "input feature has wrong size"
 
         x = x.view(B, H, W, C).permute([0, 3, 1, 2])  # B, C, H, W
 
@@ -390,12 +403,18 @@ class PatchMerging(BaseModule):
         # if kernel_size=2 and stride=2, x should has shape (B, 4*C, H/2*W/2)
         x = self.sampler(x)
 
-        out_h = (H + 2 * self.sampler.padding[0] - self.sampler.dilation[0] *
-                 (self.sampler.kernel_size[0] - 1) -
-                 1) // self.sampler.stride[0] + 1
-        out_w = (W + 2 * self.sampler.padding[1] - self.sampler.dilation[1] *
-                 (self.sampler.kernel_size[1] - 1) -
-                 1) // self.sampler.stride[1] + 1
+        out_h = (
+            H
+            + 2 * self.sampler.padding[0]
+            - self.sampler.dilation[0] * (self.sampler.kernel_size[0] - 1)
+            - 1
+        ) // self.sampler.stride[0] + 1
+        out_w = (
+            W
+            + 2 * self.sampler.padding[1]
+            - self.sampler.dilation[1] * (self.sampler.kernel_size[1] - 1)
+            - 1
+        ) // self.sampler.stride[1] + 1
 
         output_size = (out_h, out_w)
         x = x.transpose(1, 2)  # B, H/2*W/2, 4*C
@@ -427,48 +446,53 @@ class MultiheadAttention(BaseModule):
              Default to False.
     """
 
-    def __init__(self,
-                 embed_dims,
-                 num_heads,
-                 attn_drop=0.,
-                 proj_drop=0.,
-                 dropout_layer=dict(type='Dropout', drop_prob=0.),
-                 init_cfg=None,
-                 batch_first=False,
-                 **kwargs):
+    def __init__(
+        self,
+        embed_dims,
+        num_heads,
+        attn_drop=0.0,
+        proj_drop=0.0,
+        dropout_layer=dict(type="Dropout", drop_prob=0.0),
+        init_cfg=None,
+        batch_first=False,
+        **kwargs,
+    ):
         super().__init__(init_cfg)
-        if 'dropout' in kwargs:
+        if "dropout" in kwargs:
             warnings.warn(
-                'The arguments `dropout` in MultiheadAttention '
-                'has been deprecated, now you can separately '
-                'set `attn_drop`(float), proj_drop(float), '
-                'and `dropout_layer`(dict) ', DeprecationWarning)
-            attn_drop = kwargs['dropout']
-            dropout_layer['drop_prob'] = kwargs.pop('dropout')
+                "The arguments `dropout` in MultiheadAttention "
+                "has been deprecated, now you can separately "
+                "set `attn_drop`(float), proj_drop(float), "
+                "and `dropout_layer`(dict) ",
+                DeprecationWarning,
+            )
+            attn_drop = kwargs["dropout"]
+            dropout_layer["drop_prob"] = kwargs.pop("dropout")
 
         self.embed_dims = embed_dims
         self.num_heads = num_heads
         self.batch_first = batch_first
 
-        self.attn = nn.MultiheadAttention(embed_dims, num_heads, attn_drop,
-                                          **kwargs)
+        self.attn = nn.MultiheadAttention(embed_dims, num_heads, attn_drop, **kwargs)
 
         self.proj_drop = nn.Dropout(proj_drop)
-        self.dropout_layer = build_dropout(
-            dropout_layer) if dropout_layer else nn.Identity()
+        self.dropout_layer = (
+            build_dropout(dropout_layer) if dropout_layer else nn.Identity()
+        )
 
-    @deprecated_api_warning({'residual': 'identity'},
-                            cls_name='MultiheadAttention')
-    def forward(self,
-                query,
-                key=None,
-                value=None,
-                identity=None,
-                query_pos=None,
-                key_pos=None,
-                attn_mask=None,
-                key_padding_mask=None,
-                **kwargs):
+    @deprecated_api_warning({"residual": "identity"}, cls_name="MultiheadAttention")
+    def forward(
+        self,
+        query,
+        key=None,
+        value=None,
+        identity=None,
+        query_pos=None,
+        key_pos=None,
+        attn_mask=None,
+        key_padding_mask=None,
+        **kwargs,
+    ):
         """Forward function for `MultiheadAttention`.
 
         **kwargs allow passing a more general data flow when combining
@@ -521,12 +545,51 @@ class MultiheadAttention(BaseModule):
                 if query_pos.shape == key.shape:
                     key_pos = query_pos
                 else:
-                    warnings.warn(f'position encoding of key is'
-                                  f'missing in {self.__class__.__name__}.')
+                    warnings.warn(
+                        f"position encoding of key is"
+                        f"missing in {self.__class__.__name__}."
+                    )
         if query_pos is not None:
             query = query + query_pos
         if key_pos is not None:
             key = key + key_pos
+
+        # Torch MultiheadAttention requires `attn_mask` and `key_padding_mask`
+        # to be the same type. It also deprecates legacy uint8 ("ByteTensor")
+        # masks. Canonicalize here to avoid noisy warnings and ensure forward
+        # compatibility with newer torch versions.
+        if key_padding_mask is not None and key_padding_mask.dtype == torch.uint8:
+            key_padding_mask = key_padding_mask.to(torch.bool)
+        if attn_mask is not None and attn_mask.dtype == torch.uint8:
+            attn_mask = attn_mask.to(torch.bool)
+
+        if attn_mask is not None and key_padding_mask is not None:
+            # Prefer preserving float (additive) masks; otherwise use bool.
+            attn_is_float = torch.is_floating_point(attn_mask)
+            kpm_is_float = torch.is_floating_point(key_padding_mask)
+            if attn_is_float != kpm_is_float:
+                target_dtype = (
+                    attn_mask.dtype if attn_is_float else key_padding_mask.dtype
+                )
+                target_device = (
+                    attn_mask.device if attn_is_float else key_padding_mask.device
+                )
+
+                def _binary_to_float_mask(binary_mask: torch.Tensor) -> torch.Tensor:
+                    float_mask = torch.zeros(
+                        binary_mask.shape, dtype=target_dtype, device=target_device
+                    )
+                    return float_mask.masked_fill(
+                        binary_mask.to(torch.bool), float("-inf")
+                    )
+
+                if attn_is_float:
+                    key_padding_mask = _binary_to_float_mask(key_padding_mask)
+                else:
+                    attn_mask = _binary_to_float_mask(attn_mask)
+            elif attn_mask.dtype != key_padding_mask.dtype:
+                # Both float or both bool: match dtype exactly.
+                key_padding_mask = key_padding_mask.to(dtype=attn_mask.dtype)
 
         # Because the dataflow('key', 'query', 'value') of
         # ``torch.nn.MultiheadAttention`` is (num_query, batch,
@@ -544,7 +607,8 @@ class MultiheadAttention(BaseModule):
             key=key,
             value=value,
             attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask)[0]
+            key_padding_mask=key_padding_mask,
+        )[0]
 
         if self.batch_first:
             out = out.transpose(0, 1)
@@ -578,24 +642,22 @@ class FFN(BaseModule):
     """
 
     @deprecated_api_warning(
-        {
-            'dropout': 'ffn_drop',
-            'add_residual': 'add_identity'
-        },
-        cls_name='FFN')
-    def __init__(self,
-                 embed_dims=256,
-                 feedforward_channels=1024,
-                 num_fcs=2,
-                 act_cfg=dict(type='ReLU', inplace=True),
-                 ffn_drop=0.,
-                 dropout_layer=None,
-                 add_identity=True,
-                 init_cfg=None,
-                 layer_scale_init_value=0.):
+        {"dropout": "ffn_drop", "add_residual": "add_identity"}, cls_name="FFN"
+    )
+    def __init__(
+        self,
+        embed_dims=256,
+        feedforward_channels=1024,
+        num_fcs=2,
+        act_cfg=dict(type="ReLU", inplace=True),
+        ffn_drop=0.0,
+        dropout_layer=None,
+        add_identity=True,
+        init_cfg=None,
+        layer_scale_init_value=0.0,
+    ):
         super().__init__(init_cfg)
-        assert num_fcs >= 2, 'num_fcs should be no less ' \
-            f'than 2. got {num_fcs}.'
+        assert num_fcs >= 2, "num_fcs should be no less " f"than 2. got {num_fcs}."
         self.embed_dims = embed_dims
         self.feedforward_channels = feedforward_channels
         self.num_fcs = num_fcs
@@ -606,13 +668,17 @@ class FFN(BaseModule):
             layers.append(
                 Sequential(
                     Linear(in_channels, feedforward_channels),
-                    build_activation_layer(act_cfg), nn.Dropout(ffn_drop)))
+                    build_activation_layer(act_cfg),
+                    nn.Dropout(ffn_drop),
+                )
+            )
             in_channels = feedforward_channels
         layers.append(Linear(feedforward_channels, embed_dims))
         layers.append(nn.Dropout(ffn_drop))
         self.layers = Sequential(*layers)
-        self.dropout_layer = build_dropout(
-            dropout_layer) if dropout_layer else torch.nn.Identity()
+        self.dropout_layer = (
+            build_dropout(dropout_layer) if dropout_layer else torch.nn.Identity()
+        )
         self.add_identity = add_identity
 
         if layer_scale_init_value > 0:
@@ -620,7 +686,7 @@ class FFN(BaseModule):
         else:
             self.gamma2 = nn.Identity()
 
-    @deprecated_api_warning({'residual': 'identity'}, cls_name='FFN')
+    @deprecated_api_warning({"residual": "identity"}, cls_name="FFN")
     def forward(self, x, identity=None):
         """Forward function for `FFN`.
 
@@ -672,69 +738,79 @@ class BaseTransformerLayer(BaseModule):
             or (n, batch, embed_dim). Default to False.
     """
 
-    def __init__(self,
-                 attn_cfgs=None,
-                 ffn_cfgs=dict(
-                     type='FFN',
-                     embed_dims=256,
-                     feedforward_channels=1024,
-                     num_fcs=2,
-                     ffn_drop=0.,
-                     act_cfg=dict(type='ReLU', inplace=True),
-                 ),
-                 operation_order=None,
-                 norm_cfg=dict(type='LN'),
-                 init_cfg=None,
-                 batch_first=False,
-                 **kwargs):
+    def __init__(
+        self,
+        attn_cfgs=None,
+        ffn_cfgs=dict(
+            type="FFN",
+            embed_dims=256,
+            feedforward_channels=1024,
+            num_fcs=2,
+            ffn_drop=0.0,
+            act_cfg=dict(type="ReLU", inplace=True),
+        ),
+        operation_order=None,
+        norm_cfg=dict(type="LN"),
+        init_cfg=None,
+        batch_first=False,
+        **kwargs,
+    ):
 
         deprecated_args = dict(
-            feedforward_channels='feedforward_channels',
-            ffn_dropout='ffn_drop',
-            ffn_num_fcs='num_fcs')
+            feedforward_channels="feedforward_channels",
+            ffn_dropout="ffn_drop",
+            ffn_num_fcs="num_fcs",
+        )
         for ori_name, new_name in deprecated_args.items():
             if ori_name in kwargs:
                 warnings.warn(
-                    f'The arguments `{ori_name}` in BaseTransformerLayer '
-                    f'has been deprecated, now you should set `{new_name}` '
-                    f'and other FFN related arguments '
-                    f'to a dict named `ffn_cfgs`. ', DeprecationWarning)
+                    f"The arguments `{ori_name}` in BaseTransformerLayer "
+                    f"has been deprecated, now you should set `{new_name}` "
+                    f"and other FFN related arguments "
+                    f"to a dict named `ffn_cfgs`. ",
+                    DeprecationWarning,
+                )
                 ffn_cfgs[new_name] = kwargs[ori_name]
 
         super().__init__(init_cfg)
 
         self.batch_first = batch_first
 
-        assert set(operation_order) & {
-            'self_attn', 'norm', 'ffn', 'cross_attn'} == \
-            set(operation_order), f'The operation_order of' \
-            f' {self.__class__.__name__} should ' \
-            f'contains all four operation type ' \
+        assert set(operation_order) & {"self_attn", "norm", "ffn", "cross_attn"} == set(
+            operation_order
+        ), (
+            f"The operation_order of"
+            f" {self.__class__.__name__} should "
+            f"contains all four operation type "
             f"{['self_attn', 'norm', 'ffn', 'cross_attn']}"
+        )
 
-        num_attn = operation_order.count('self_attn') + operation_order.count(
-            'cross_attn')
+        num_attn = operation_order.count("self_attn") + operation_order.count(
+            "cross_attn"
+        )
         if isinstance(attn_cfgs, dict):
             attn_cfgs = [copy.deepcopy(attn_cfgs) for _ in range(num_attn)]
         else:
-            assert num_attn == len(attn_cfgs), f'The length ' \
-                f'of attn_cfg {num_attn} is ' \
-                f'not consistent with the number of attention' \
-                f'in operation_order {operation_order}.'
+            assert num_attn == len(attn_cfgs), (
+                f"The length "
+                f"of attn_cfg {num_attn} is "
+                f"not consistent with the number of attention"
+                f"in operation_order {operation_order}."
+            )
 
         self.num_attn = num_attn
         self.operation_order = operation_order
         self.norm_cfg = norm_cfg
-        self.pre_norm = operation_order[0] == 'norm'
+        self.pre_norm = operation_order[0] == "norm"
         self.attentions = ModuleList()
 
         index = 0
         for operation_name in operation_order:
-            if operation_name in ['self_attn', 'cross_attn']:
-                if 'batch_first' in attn_cfgs[index]:
-                    assert self.batch_first == attn_cfgs[index]['batch_first']
+            if operation_name in ["self_attn", "cross_attn"]:
+                if "batch_first" in attn_cfgs[index]:
+                    assert self.batch_first == attn_cfgs[index]["batch_first"]
                 else:
-                    attn_cfgs[index]['batch_first'] = self.batch_first
+                    attn_cfgs[index]["batch_first"] = self.batch_first
                 attention = build_attention(attn_cfgs[index])
                 # Some custom attentions used as `self_attn`
                 # or `cross_attn` can have different behavior.
@@ -745,36 +821,38 @@ class BaseTransformerLayer(BaseModule):
         self.embed_dims = self.attentions[0].embed_dims
 
         self.ffns = ModuleList()
-        num_ffns = operation_order.count('ffn')
+        num_ffns = operation_order.count("ffn")
         if isinstance(ffn_cfgs, dict):
             ffn_cfgs = ConfigDict(ffn_cfgs)
         if isinstance(ffn_cfgs, dict):
             ffn_cfgs = [copy.deepcopy(ffn_cfgs) for _ in range(num_ffns)]
         assert len(ffn_cfgs) == num_ffns
         for ffn_index in range(num_ffns):
-            if 'embed_dims' not in ffn_cfgs[ffn_index]:
-                ffn_cfgs[ffn_index]['embed_dims'] = self.embed_dims
+            if "embed_dims" not in ffn_cfgs[ffn_index]:
+                ffn_cfgs[ffn_index]["embed_dims"] = self.embed_dims
             else:
-                assert ffn_cfgs[ffn_index]['embed_dims'] == self.embed_dims
+                assert ffn_cfgs[ffn_index]["embed_dims"] == self.embed_dims
             self.ffns.append(
-                build_feedforward_network(ffn_cfgs[ffn_index],
-                                          dict(type='FFN')))
+                build_feedforward_network(ffn_cfgs[ffn_index], dict(type="FFN"))
+            )
 
         self.norms = ModuleList()
-        num_norms = operation_order.count('norm')
+        num_norms = operation_order.count("norm")
         for _ in range(num_norms):
             self.norms.append(build_norm_layer(norm_cfg, self.embed_dims)[1])
 
-    def forward(self,
-                query,
-                key=None,
-                value=None,
-                query_pos=None,
-                key_pos=None,
-                attn_masks=None,
-                query_key_padding_mask=None,
-                key_padding_mask=None,
-                **kwargs):
+    def forward(
+        self,
+        query,
+        key=None,
+        value=None,
+        query_pos=None,
+        key_pos=None,
+        attn_masks=None,
+        query_key_padding_mask=None,
+        key_padding_mask=None,
+        **kwargs,
+    ):
         """Forward function for `TransformerDecoderLayer`.
 
         **kwargs contains some specific arguments of attentions.
@@ -813,19 +891,17 @@ class BaseTransformerLayer(BaseModule):
         if attn_masks is None:
             attn_masks = [None for _ in range(self.num_attn)]
         elif isinstance(attn_masks, torch.Tensor):
-            attn_masks = [
-                copy.deepcopy(attn_masks) for _ in range(self.num_attn)
-            ]
-            warnings.warn(f'Use same attn_mask in all attentions in '
-                          f'{self.__class__.__name__} ')
+            attn_masks = [copy.deepcopy(attn_masks) for _ in range(self.num_attn)]
         else:
-            assert len(attn_masks) == self.num_attn, f'The length of ' \
-                        f'attn_masks {len(attn_masks)} must be equal ' \
-                        f'to the number of attention in ' \
-                        f'operation_order {self.num_attn}'
+            assert len(attn_masks) == self.num_attn, (
+                f"The length of "
+                f"attn_masks {len(attn_masks)} must be equal "
+                f"to the number of attention in "
+                f"operation_order {self.num_attn}"
+            )
 
         for layer in self.operation_order:
-            if layer == 'self_attn':
+            if layer == "self_attn":
                 temp_key = temp_value = query
                 query = self.attentions[attn_index](
                     query,
@@ -836,15 +912,16 @@ class BaseTransformerLayer(BaseModule):
                     key_pos=query_pos,
                     attn_mask=attn_masks[attn_index],
                     key_padding_mask=query_key_padding_mask,
-                    **kwargs)
+                    **kwargs,
+                )
                 attn_index += 1
                 identity = query
 
-            elif layer == 'norm':
+            elif layer == "norm":
                 query = self.norms[norm_index](query)
                 norm_index += 1
 
-            elif layer == 'cross_attn':
+            elif layer == "cross_attn":
                 query = self.attentions[attn_index](
                     query,
                     key,
@@ -854,13 +931,13 @@ class BaseTransformerLayer(BaseModule):
                     key_pos=key_pos,
                     attn_mask=attn_masks[attn_index],
                     key_padding_mask=key_padding_mask,
-                    **kwargs)
+                    **kwargs,
+                )
                 attn_index += 1
                 identity = query
 
-            elif layer == 'ffn':
-                query = self.ffns[ffn_index](
-                    query, identity if self.pre_norm else None)
+            elif layer == "ffn":
+                query = self.ffns[ffn_index](query, identity if self.pre_norm else None)
                 ffn_index += 1
 
         return query
@@ -893,8 +970,10 @@ class TransformerLayerSequence(BaseModule):
                 copy.deepcopy(transformerlayers) for _ in range(num_layers)
             ]
         else:
-            assert isinstance(transformerlayers, list) and \
-                   len(transformerlayers) == num_layers
+            assert (
+                isinstance(transformerlayers, list)
+                and len(transformerlayers) == num_layers
+            )
         self.num_layers = num_layers
         self.layers = ModuleList()
         for i in range(num_layers):
@@ -902,16 +981,18 @@ class TransformerLayerSequence(BaseModule):
         self.embed_dims = self.layers[0].embed_dims
         self.pre_norm = self.layers[0].pre_norm
 
-    def forward(self,
-                query,
-                key,
-                value,
-                query_pos=None,
-                key_pos=None,
-                attn_masks=None,
-                query_key_padding_mask=None,
-                key_padding_mask=None,
-                **kwargs):
+    def forward(
+        self,
+        query,
+        key,
+        value,
+        query_pos=None,
+        key_pos=None,
+        attn_masks=None,
+        query_key_padding_mask=None,
+        key_padding_mask=None,
+        **kwargs,
+    ):
         """Forward function for `TransformerCoder`.
 
         Args:
@@ -947,5 +1028,6 @@ class TransformerLayerSequence(BaseModule):
                 attn_masks=attn_masks,
                 query_key_padding_mask=query_key_padding_mask,
                 key_padding_mask=key_padding_mask,
-                **kwargs)
+                **kwargs,
+            )
         return query
