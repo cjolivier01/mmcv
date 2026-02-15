@@ -137,6 +137,10 @@ except ImportError:
 
 def get_extensions():
     extensions = []
+    # glibc 2.41+ declares C23 rsqrt/rsqrtf with noexcept, which conflicts
+    # with CUDA's declarations when NVCC compiles C++17 code.
+    nvcc_glibc_compat_header = os.path.abspath(
+        './mmcv/ops/csrc/common/cuda/nvcc_glibc_compat.h')
 
     if os.getenv('MMCV_WITH_OPS', '1') == '0':
         return extensions
@@ -159,7 +163,8 @@ def get_extensions():
         op_files.remove('./mmcv/ops/csrc/pytorch/cuda/bias_act_cuda.cu')
         cuda_args = os.getenv('MMCV_CUDA_ARGS')
         extra_compile_args = {
-            'nvcc': [cuda_args, '-std=c++14'] if cuda_args else ['-std=c++14'],
+            'nvcc': [cuda_args, '-include', nvcc_glibc_compat_header, '-std=c++14']
+            if cuda_args else ['-include', nvcc_glibc_compat_header, '-std=c++14'],
             'cxx': ['-std=c++14'],
         }
         if torch.cuda.is_available() or os.getenv('FORCE_CUDA', '0') == '1':
@@ -261,7 +266,9 @@ def get_extensions():
                 define_macros += [('MMCV_WITH_HIP', None)]
             define_macros += [('MMCV_WITH_CUDA', None)]
             cuda_args = os.getenv('MMCV_CUDA_ARGS')
-            extra_compile_args['nvcc'] = [cuda_args] if cuda_args else []
+            extra_compile_args['nvcc'] = (
+                [cuda_args, '-include', nvcc_glibc_compat_header]
+                if cuda_args else ['-include', nvcc_glibc_compat_header])
             op_files = glob.glob('./mmcv/ops/csrc/pytorch/*.cpp') + \
                 glob.glob('./mmcv/ops/csrc/pytorch/cpu/*.cpp') + \
                 glob.glob('./mmcv/ops/csrc/pytorch/cuda/*.cu') + \
