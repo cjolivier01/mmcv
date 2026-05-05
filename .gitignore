@@ -117,6 +117,10 @@ venv.bak/
 
 # custom
 .DS_Store
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-*
 
 # datasets and logs and checkpoints
 data/

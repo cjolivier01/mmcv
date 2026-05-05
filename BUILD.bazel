@@ -1,0 +1,142 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "use_cuda",
+    values = {"define": "backend=cuda"},
+)
+
+config_setting(
+    name = "use_hip",
+    values = {"define": "backend=hip"},
+)
+
+config_setting(
+    name = "use_vulkan",
+    values = {"define": "backend=vulkan"},
+)
+
+sh_test(
+    name = "build_tools_test",
+    srcs = ["bazel/run_unittest.sh"],
+    data = glob([
+        "build_tools/*.py",
+        "tests/test_build_tools.py",
+    ]),
+)
+
+sh_binary(
+    name = "build_ext",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["build-ext", "--backend=auto"],
+)
+
+sh_binary(
+    name = "build_ext_cpu",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["build-ext", "--backend=cpu"],
+)
+
+sh_binary(
+    name = "build_ext_cuda",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["build-ext", "--backend=cuda"],
+)
+
+sh_binary(
+    name = "build_ext_hip",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["build-ext", "--backend=hip"],
+)
+
+sh_binary(
+    name = "build_ext_vulkan",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["build-ext", "--backend=vulkan"],
+)
+
+sh_binary(
+    name = "bdist_wheel",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["wheel", "--backend=auto"],
+)
+
+sh_binary(
+    name = "bdist_wheel_cpu",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["wheel", "--backend=cpu"],
+)
+
+sh_binary(
+    name = "bdist_wheel_cuda",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["wheel", "--backend=cuda"],
+)
+
+sh_binary(
+    name = "bdist_wheel_hip",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["wheel", "--backend=hip"],
+)
+
+sh_binary(
+    name = "bdist_wheel_vulkan",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["wheel", "--backend=vulkan"],
+)
+
+sh_binary(
+    name = "develop",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["develop", "--backend=auto"],
+)
+
+sh_binary(
+    name = "develop_cpu",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["develop", "--backend=cpu"],
+)
+
+sh_binary(
+    name = "develop_cuda",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["develop", "--backend=cuda"],
+)
+
+sh_binary(
+    name = "develop_hip",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["develop", "--backend=hip"],
+)
+
+sh_binary(
+    name = "smoke_import",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["smoke-import", "--backend=auto"],
+)
+
+sh_binary(
+    name = "smoke_import_cpu",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["smoke-import", "--backend=cpu"],
+)
+
+sh_binary(
+    name = "smoke_import_cuda",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["smoke-import", "--backend=cuda"],
+)
+
+sh_binary(
+    name = "smoke_import_hip",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["smoke-import", "--backend=hip"],
+)
+
+sh_binary(
+    name = "smoke_import_vulkan",
+    srcs = ["bazel/run_cli.sh"],
+    args = ["smoke-import", "--backend=vulkan"],
+)
