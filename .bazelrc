@@ -1,0 +1,16 @@
+build --color=yes
+build --copt=-fPIC
+build --cxxopt=-std=c++17
+
+build:debug -c dbg
+build:debug --strip=never
+build:debug --copt=-g3
+build:debug --copt=-O0
+build:debug --copt=-UNDEBUG
+
+build:release -c opt
+build:release --strip=always
+build:release --copt=-O3
+build:release --copt=-DNDEBUG
+
+test --test_output=errors
