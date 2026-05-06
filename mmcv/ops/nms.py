@@ -17,10 +17,12 @@ except Exception:  # pragma: no cover - optional
     _HAS_TV_NMS = False
 
 # Select NMS backend
+_IS_ROCM = bool(getattr(torch.version, "hip", None))
 _NMS_BACKEND = os.environ.get(
     "HM_NMS_BACKEND",
-    # Default to torchvision for performance; override with HM_NMS_BACKEND=torch for pure PyTorch.
-    "torchvision" if _HAS_TV_NMS else "torch",
+    # ROCm currently uses the pure-torch path because both torchvision NMS and
+    # the HIP-built extension can fail at runtime on this stack.
+    "torch" if _IS_ROCM else ("torchvision" if _HAS_TV_NMS else "torch"),
 ).lower()
 
 
