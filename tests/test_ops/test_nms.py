@@ -1,4 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import importlib
+
 import mmengine
 import numpy as np
 import pytest
@@ -203,3 +205,33 @@ class Testnms:
         assert len(seq_keep) == len(results['boxes'])
         # assert score is descending order
         assert ((seq_boxes[:, -1][1:] - seq_boxes[:, -1][:-1]) < 0).all()
+
+    @pytest.mark.parametrize('device', [
+        'cpu',
+        pytest.param(
+            'cuda',
+            marks=pytest.mark.skipif(
+                not IS_CUDA_AVAILABLE, reason='requires CUDA support'))
+    ])
+    def test_nms_torch_backend(self, device, monkeypatch):
+        nms_mod = importlib.import_module('mmcv.ops.nms')
+
+        monkeypatch.setattr(nms_mod, '_NMS_BACKEND', 'torch')
+
+        boxes = torch.tensor([[6.0, 3.0, 8.0, 7.0], [3.0, 6.0, 9.0, 11.0],
+                              [3.0, 7.0, 10.0, 12.0], [1.0, 4.0, 13.0, 7.0]],
+                             dtype=torch.float32,
+                             device=device)
+        boxes = boxes.t().contiguous().t()
+        scores = torch.tensor([0.6, 0.9, 0.7, 0.2],
+                              dtype=torch.float32,
+                              device=device)
+
+        dets, inds = nms_mod.nms(boxes, scores, iou_threshold=0.3, offset=0)
+
+        np_dets = np.array([[3.0, 6.0, 9.0, 11.0, 0.9],
+                            [6.0, 3.0, 8.0, 7.0, 0.6],
+                            [1.0, 4.0, 13.0, 7.0, 0.2]])
+        np_inds = np.array([1, 0, 3])
+        assert np.allclose(dets.cpu().numpy(), np_dets)
+        assert np.allclose(inds.cpu().numpy(), np_inds)

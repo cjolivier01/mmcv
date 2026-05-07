@@ -46,21 +46,33 @@ def _torch_nms(
     boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float
 ) -> torch.Tensor:
     # Pure-PyTorch NMS without calling extension ops. Stays on device stream.
+    # ROCm is sensitive to the scalar-tensor indexing pattern used in the
+    # original implementation, so normalize the compute path there.
     if boxes.numel() == 0:
         return boxes.new_zeros((0,), dtype=torch.long)
-    # sort by score desc
-    order = scores.sort(descending=True).indices
+
+    compute_boxes = boxes
+    compute_scores = scores
+    if _IS_ROCM:
+        compute_boxes = boxes.float().contiguous()
+        compute_scores = scores.float().contiguous()
+
+    order = compute_scores.sort(descending=True).indices
     keep_inds: List[torch.Tensor] = []
+    iou_threshold_tensor = compute_boxes.new_full((), float(iou_threshold))
     while order.numel() > 0:
-        i = order[0]
-        keep_inds.append(i)
+        current = order[:1]
+        keep_inds.append(current)
         if order.numel() == 1:
             break
-        iou = _torch_iou_one_to_many(boxes[i], boxes[order[1:]])
-        remaining_mask = iou <= float(iou_threshold)
-        order = order[1:][remaining_mask]
+        rest = order[1:]
+        current_box = compute_boxes.index_select(0, current).squeeze(0)
+        rest_boxes = compute_boxes.index_select(0, rest)
+        iou = _torch_iou_one_to_many(current_box, rest_boxes)
+        remaining_mask = torch.le(iou, iou_threshold_tensor)
+        order = rest.masked_select(remaining_mask)
     if keep_inds:
-        return torch.stack(keep_inds).to(dtype=torch.long, device=boxes.device)
+        return torch.cat(keep_inds).to(dtype=torch.long, device=boxes.device)
     return boxes.new_zeros((0,), dtype=torch.long)
 
 
