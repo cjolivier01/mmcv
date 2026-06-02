@@ -1,1 +1,1 @@
-MMCV_WITH_CUDA=1 MMCV_WITH_OPS=1 python setup.py develop $@
+MAX_JOBS=$(nproc) MMCV_WITH_CUDA=1 MMCV_WITH_OPS=1 python setup.py develop $@
