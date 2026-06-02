@@ -127,3 +127,4 @@ data/
 work_dir/
 
 src/
+.nfs*
