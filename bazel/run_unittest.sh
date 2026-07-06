@@ -9,6 +9,11 @@ else
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
+if [[ -f "${ROOT}/openmm/mmcv/tests/test_build_tools.py" ]]; then
+  ROOT="${ROOT}/openmm/mmcv"
+fi
+export BUILD_WORKSPACE_DIRECTORY="${ROOT}"
+
 PYTHON_BIN="${MMCV_PYTHON:-${PYTHON_BIN_PATH:-}}"
 if [[ -z "${PYTHON_BIN}" ]]; then
   if command -v python >/dev/null 2>&1; then
