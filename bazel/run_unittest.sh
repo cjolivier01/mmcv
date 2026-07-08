@@ -2,9 +2,9 @@
 set -euo pipefail
 
 if [[ -n "${TEST_SRCDIR:-}" && -n "${TEST_WORKSPACE:-}" ]]; then
-  ROOT="${TEST_SRCDIR}/${TEST_WORKSPACE}"
+  ROOT="${TEST_SRCDIR}/${TEST_WORKSPACE}/openmm/mmcv"
 elif [[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]]; then
-  ROOT="${BUILD_WORKSPACE_DIRECTORY}"
+  ROOT="${BUILD_WORKSPACE_DIRECTORY}/openmm/mmcv"
 else
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
