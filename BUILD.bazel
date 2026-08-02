@@ -24,7 +24,9 @@ sh_test(
     data = glob([
         "build_tools/*.py",
         "tests/test_build_tools.py",
-    ]),
+    ]) + [
+        ".bazel_setup.sh",
+    ],
 )
 
 sh_binary(
