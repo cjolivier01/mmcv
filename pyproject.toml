@@ -9,6 +9,6 @@ requires = [
   # ninja speeds up compilation for torch extensions (optional on Windows)
   "ninja; platform_system != 'Windows'",
   "packaging",
+  "importlib-metadata; python_version < '3.8'",
 ]
 build-backend = "setuptools.build_meta"
-
