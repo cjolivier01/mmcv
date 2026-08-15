@@ -44,7 +44,11 @@ def run_setup(stage_root: Path, env: dict[str, str], setup_args: list[str]) -> N
 def build_extension(args: argparse.Namespace) -> int:
     backend = bazel_support.resolve_backend(args.backend)
     bazel_support.validate_backend_python(backend)
-    output_dir = Path(args.output_dir) if args.output_dir else bazel_support.artifact_dir("build", backend)
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else bazel_support.artifact_dir("build", backend)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if backend == "vulkan":
@@ -54,7 +58,9 @@ def build_extension(args: argparse.Namespace) -> int:
 
     bazel_support.clear_matching(output_dir, ["_ext*.so"])
     env = bazel_support.build_env_for_backend(backend)
-    with staged_project(backend, hipify=not args.no_hipify, keep_stage=args.keep_stage) as (stage_root, hipified):
+    with staged_project(
+        backend, hipify=not args.no_hipify, keep_stage=args.keep_stage
+    ) as (stage_root, hipified):
         if hipified:
             print(f"Applied HIP overlay to {len(hipified)} source files.")
         run_setup(stage_root, env, ["build_ext", "--inplace"])
@@ -68,12 +74,18 @@ def build_extension(args: argparse.Namespace) -> int:
 def build_wheel(args: argparse.Namespace) -> int:
     backend = bazel_support.resolve_backend(args.backend)
     bazel_support.validate_backend_python(backend)
-    output_dir = Path(args.output_dir) if args.output_dir else bazel_support.artifact_dir("wheel", backend)
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else bazel_support.artifact_dir("wheel", backend)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     env = bazel_support.build_env_for_backend(backend)
     before = {path.name for path in output_dir.glob("*.whl")}
-    with staged_project(backend, hipify=not args.no_hipify, keep_stage=args.keep_stage) as (stage_root, hipified):
+    with staged_project(
+        backend, hipify=not args.no_hipify, keep_stage=args.keep_stage
+    ) as (stage_root, hipified):
         if backend == "vulkan":
             print(
                 "Building a Vulkan-compatible wheel by packaging mmcv-lite "
@@ -86,7 +98,7 @@ def build_wheel(args: argparse.Namespace) -> int:
         run_setup(
             stage_root,
             env,
-            ["bdist_wheel", "--dist-dir", str(output_dir), "--skip-build"],
+            ["bdist_wheel", "--dist-dir", str(output_dir)],
         )
 
     after = {path.name for path in output_dir.glob("*.whl")}
@@ -103,6 +115,10 @@ def build_wheel(args: argparse.Namespace) -> int:
                 f"Wheel {wheel_path} has extension={found_ops}, expected {expected_ops} "
                 f"for backend {backend}."
             )
+        if not bazel_support.wheel_has_python_package(wheel_path):
+            raise RuntimeError(
+                f"Wheel {wheel_path} is missing the MMCV Python package files."
+            )
         print(f"Wrote {wheel_path}")
     return 0
 
@@ -115,7 +131,9 @@ def develop_extension(args: argparse.Namespace) -> int:
     if backend == "vulkan":
         dest_dir = workspace_root / "mmcv"
         bazel_support.clear_matching(dest_dir, ["_ext*.so"])
-        marker = bazel_support.write_vulkan_marker(bazel_support.artifact_dir("build", backend, root=workspace_root))
+        marker = bazel_support.write_vulkan_marker(
+            bazel_support.artifact_dir("build", backend, root=workspace_root)
+        )
         print(
             "Vulkan develop mode does not copy mmcv._ext because no native "
             f"Vulkan extension exists. Wrote {marker} instead."
@@ -123,7 +141,9 @@ def develop_extension(args: argparse.Namespace) -> int:
         return 0
 
     env = bazel_support.build_env_for_backend(backend)
-    with staged_project(backend, hipify=not args.no_hipify, keep_stage=args.keep_stage) as (stage_root, hipified):
+    with staged_project(
+        backend, hipify=not args.no_hipify, keep_stage=args.keep_stage
+    ) as (stage_root, hipified):
         if hipified:
             print(f"Applied HIP overlay to {len(hipified)} source files.")
         run_setup(stage_root, env, ["build_ext", "--inplace"])
@@ -141,14 +161,18 @@ def smoke_import(args: argparse.Namespace) -> int:
     bazel_support.validate_backend_python(backend)
     env = bazel_support.build_env_for_backend(backend)
 
-    with staged_project(backend, hipify=not args.no_hipify, keep_stage=args.keep_stage) as (stage_root, hipified):
+    with staged_project(
+        backend, hipify=not args.no_hipify, keep_stage=args.keep_stage
+    ) as (stage_root, hipified):
         if backend in {"cuda", "hip"}:
             if hipified:
                 print(f"Applied HIP overlay to {len(hipified)} source files.")
             run_setup(stage_root, env, ["build_ext", "--inplace"])
 
         smoke_env = dict(env)
-        smoke_env["PYTHONPATH"] = f"{stage_root}{os.pathsep}{smoke_env.get('PYTHONPATH', '')}"
+        smoke_env["PYTHONPATH"] = (
+            f"{stage_root}{os.pathsep}{smoke_env.get('PYTHONPATH', '')}"
+        )
         smoke_code = """
 import importlib.util
 from pathlib import Path

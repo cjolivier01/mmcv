@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from pathlib import Path
-from zipfile import ZipFile
-from types import SimpleNamespace
 import sys
+from pathlib import Path
+from types import SimpleNamespace
+from zipfile import ZipFile
 
 PROJECT_FILES = (
     "LICENSE",
@@ -97,9 +97,7 @@ def can_build_backend(backend: str) -> bool:
         except ImportError:
             return False
         return ROCM_HOME is not None or shutil.which("hipcc") is not None
-    if backend in {"cpu", "vulkan"}:
-        return True
-    return False
+    return backend in {"cpu", "vulkan"}
 
 
 def resolve_backend(requested: str) -> str:
@@ -155,7 +153,14 @@ def detect_hip_include_paths() -> list[Path]:
     version_dir = f"python{sys.version_info.major}.{sys.version_info.minor}"
     for prefix in (Path(sys.prefix), Path(sys.base_prefix)):
         candidates.append(prefix / "include")
-        candidates.append(prefix / "lib" / version_dir / "site-packages" / "_rocm_sdk_devel" / "include")
+        candidates.append(
+            prefix
+            / "lib"
+            / version_dir
+            / "site-packages"
+            / "_rocm_sdk_devel"
+            / "include"
+        )
 
     existing: list[Path] = []
     seen: set[str] = set()
@@ -292,6 +297,14 @@ def wheel_has_extension(wheel_path: Path) -> bool:
         )
 
 
+def wheel_has_python_package(wheel_path: Path) -> bool:
+    with ZipFile(wheel_path) as archive:
+        names = archive.namelist()
+        return "mmcv/__init__.py" in names and any(
+            member.startswith("mmcv/") and member.endswith(".py") for member in names
+        )
+
+
 def clear_matching(output_dir: Path, patterns: list[str]) -> None:
     if not output_dir.exists():
         return
@@ -374,11 +387,13 @@ def detect_torch_cuda_arch_list() -> str:
         return CUDA_ARCH_LIST_FALLBACK
 
     unique_values = sorted(set(arch_values))
-    arch_list = compact_cuda_arch_list([
-        _sm_value_to_arch(value)
-        for value in unique_values
-        if _sm_value_to_arch(value) in TORCH_VALID_CUDA_ARCHES
-    ])
+    arch_list = compact_cuda_arch_list(
+        [
+            _sm_value_to_arch(value)
+            for value in unique_values
+            if _sm_value_to_arch(value) in TORCH_VALID_CUDA_ARCHES
+        ]
+    )
     if not arch_list:
         return CUDA_ARCH_LIST_FALLBACK
     arch_list[-1] = f"{arch_list[-1]}+PTX"
