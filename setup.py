@@ -140,6 +140,21 @@ except ImportError:
         install_requires.append(choose_requirement(main, secondary))
 
 
+def get_cxx_std_args():
+    """Return the C++ standard flags to force on the compiler.
+
+    PyTorch appends the standard its headers require (``-std=c++17`` for
+    older releases, ``-std=c++20`` since the C++20 migration) to both the
+    cxx and nvcc flags, but only when no ``-std=`` flag is already present.
+    Hard-coding one here would therefore pin the build to an older standard
+    than the installed PyTorch needs, so only the releases predating that
+    behaviour get an explicit flag.
+    """
+    if parse_version(torch.__version__) > parse_version('1.12.1'):
+        return []
+    return ['/std:c++14'] if platform.system() == 'Windows' else ['-std=c++14']
+
+
 def get_extensions():
     extensions = []
     # glibc 2.41+ declares C23 rsqrt/rsqrtf with noexcept, which conflicts
@@ -209,18 +224,7 @@ def get_extensions():
         # Since PyTorch1.8.0, it has a default value so users do not need
         # to pass an empty list anymore.
         # More details at https://github.com/pytorch/pytorch/pull/45956
-        extra_compile_args = {'cxx': []}
-
-        if platform.system() != 'Windows':
-            if parse_version(torch.__version__) <= parse_version('1.12.1'):
-                extra_compile_args['cxx'] = ['-std=c++14']
-            else:
-                extra_compile_args['cxx'] = ['-std=c++17']
-        else:
-            if parse_version(torch.__version__) <= parse_version('1.12.1'):
-                extra_compile_args['cxx'] = ['/std:c++14']
-            else:
-                extra_compile_args['cxx'] = ['/std:c++17']
+        extra_compile_args = {'cxx': get_cxx_std_args()}
 
         include_dirs = []
         library_dirs = []
@@ -392,7 +396,7 @@ def get_extensions():
 
             define_macros += [('MMCV_WITH_MPS', None)]
             extra_compile_args = {}
-            extra_compile_args['cxx'] = ['-Wall', '-std=c++17']
+            extra_compile_args['cxx'] = ['-Wall'] + get_cxx_std_args()
             extra_compile_args['cxx'] += [
                 '-framework', 'Metal', '-framework', 'Foundation'
             ]
@@ -451,10 +455,7 @@ def get_extensions():
         # to compile those cpp files, so there is no need to add the
         # argument
         if 'nvcc' in extra_compile_args and platform.system() != 'Windows':
-            if parse_version(torch.__version__) <= parse_version('1.12.1'):
-                extra_compile_args['nvcc'] += ['-std=c++14']
-            else:
-                extra_compile_args['nvcc'] += ['-std=c++17']
+            extra_compile_args['nvcc'] += get_cxx_std_args()
 
         ext_ops = extension(
             name=ext_name,
