@@ -35,36 +35,15 @@ COPY_IGNORE_PATTERNS = (
 )
 
 VULKAN_MARKER = "mmcv_vulkan_build.txt"
-CUDA_ARCH_LIST_FALLBACK = "7.5;8.0;9.0;10.0;11.0;12.0+PTX"
-TORCH_VALID_CUDA_ARCHES = {
-    "3.5",
-    "3.7",
-    "5.0",
-    "5.2",
-    "5.3",
-    "6.0",
-    "6.1",
-    "6.2",
-    "7.0",
-    "7.2",
-    "7.5",
-    "8.0",
-    "8.6",
-    "8.7",
-    "8.9",
-    "9.0",
-    "9.0a",
-    "10.0",
-    "10.0a",
-    "10.3",
-    "10.3a",
-    "11.0",
-    "11.0a",
-    "12.0",
-    "12.0a",
-    "12.1",
-    "12.1a",
-}
+
+# Compute capabilities the CUDA extension ships device code for. A cubin runs
+# on later minor revisions of the same major revision but never on an earlier
+# one, so every distinct target needs its own entry:
+#   8.9  Ada Lovelace - RTX 4090
+#   12.0 Blackwell    - RTX 5070, RTX 5090
+# The highest target additionally emits PTX, letting later parts (sm_121 and
+# up) JIT rather than fail to load.
+CUDA_ARCH_TARGETS = ("8.9", "12.0")
 
 
 def repo_root() -> Path:
@@ -180,6 +159,17 @@ def build_env_for_backend(backend: str) -> dict[str, str]:
     elif backend == "cuda":
         env["MMCV_WITH_OPS"] = "1"
         env["FORCE_CUDA"] = "1"
+        # setup.py forwards MMCV_CUDA_ARGS verbatim to nvcc, and torch drops
+        # every TORCH_CUDA_ARCH_LIST flag as soon as an explicit "arch" one is
+        # present. Selecting architectures that way would silently discard the
+        # ones resolved below, so refuse it rather than ship the wrong SASS.
+        cuda_args = env.get("MMCV_CUDA_ARGS")
+        if cuda_args and "arch" in cuda_args:
+            raise RuntimeError(
+                f"MMCV_CUDA_ARGS={cuda_args!r} carries an explicit architecture "
+                "flag, which makes PyTorch ignore TORCH_CUDA_ARCH_LIST. Set "
+                "MMCV_TORCH_CUDA_ARCH_LIST instead to choose architectures."
+            )
         env.setdefault("TORCH_CUDA_ARCH_LIST", detect_torch_cuda_arch_list())
     elif backend == "hip":
         env["MMCV_WITH_OPS"] = "1"
@@ -316,13 +306,7 @@ def write_vulkan_marker(output_dir: Path) -> Path:
 
 
 def _sm_value_to_arch(sm_value: int) -> str:
-    major = sm_value // 10
-    minor = sm_value % 10
-    if sm_value >= 100:
-        major = sm_value // 10
-        minor = sm_value % 10
-        return f"{major}.{minor}"
-    return f"{major}.{minor}"
+    return f"{sm_value // 10}.{sm_value % 10}"
 
 
 def _cuda_arch_sort_key(arch: str) -> tuple[int, int]:
@@ -331,12 +315,43 @@ def _cuda_arch_sort_key(arch: str) -> tuple[int, int]:
     return int(major_str), int(minor_str)
 
 
-def compact_cuda_arch_list(arches: list[str]) -> list[str]:
-    compact_by_major: dict[int, str] = {}
-    for arch in sorted(set(arches), key=_cuda_arch_sort_key):
-        major, _minor = _cuda_arch_sort_key(arch)
-        compact_by_major.setdefault(major, arch)
-    return [compact_by_major[major] for major in sorted(compact_by_major)]
+def find_nvcc() -> str | None:
+    found = shutil.which("nvcc")
+    if found:
+        return found
+    for root in (os.environ.get("CUDA_HOME"), os.environ.get("CUDA_PATH")):
+        if not root:
+            continue
+        candidate = Path(root) / "bin" / "nvcc"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def nvcc_supported_arches(nvcc: str) -> list[str]:
+    result = subprocess.run(
+        [nvcc, "--list-gpu-code"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"'{nvcc} --list-gpu-code' exited with {result.returncode}, so the "
+            "CUDA architectures this toolkit supports are unknown: "
+            f"{result.stderr.strip()}"
+        )
+
+    arches = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("sm_"):
+            continue
+        try:
+            arches.append(_sm_value_to_arch(int(line.split("_", 1)[1])))
+        except ValueError:
+            continue
+    return arches
 
 
 def detect_torch_cuda_arch_list() -> str:
@@ -348,38 +363,26 @@ def detect_torch_cuda_arch_list() -> str:
     if existing:
         return existing
 
-    try:
-        result = subprocess.run(
-            ["nvcc", "--list-gpu-code"],
-            check=False,
-            capture_output=True,
-            text=True,
+    targets = ";".join(CUDA_ARCH_TARGETS)
+    nvcc = find_nvcc()
+    if nvcc is None:
+        raise RuntimeError(
+            "nvcc was not found on PATH or under CUDA_HOME/CUDA_PATH, so the "
+            f"CUDA architectures mmcv targets ({targets}) cannot be verified. "
+            "Install the CUDA toolkit, or set MMCV_TORCH_CUDA_ARCH_LIST to "
+            "build for a different architecture set."
         )
-    except FileNotFoundError:
-        return CUDA_ARCH_LIST_FALLBACK
-    if result.returncode != 0:
-        return CUDA_ARCH_LIST_FALLBACK
 
-    arch_values = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line.startswith("sm_"):
-            continue
-        try:
-            arch_values.append(int(line.split("_", 1)[1]))
-        except ValueError:
-            continue
+    supported = set(nvcc_supported_arches(nvcc))
+    missing = [arch for arch in CUDA_ARCH_TARGETS if arch not in supported]
+    if missing:
+        raise RuntimeError(
+            f"{nvcc} cannot generate code for compute capability "
+            f"{', '.join(missing)}, which mmcv targets ({targets}). Upgrade "
+            "the CUDA toolkit, or set MMCV_TORCH_CUDA_ARCH_LIST to the "
+            "architectures this toolkit supports."
+        )
 
-    if not arch_values:
-        return CUDA_ARCH_LIST_FALLBACK
-
-    unique_values = sorted(set(arch_values))
-    arch_list = compact_cuda_arch_list([
-        _sm_value_to_arch(value)
-        for value in unique_values
-        if _sm_value_to_arch(value) in TORCH_VALID_CUDA_ARCHES
-    ])
-    if not arch_list:
-        return CUDA_ARCH_LIST_FALLBACK
+    arch_list = sorted(CUDA_ARCH_TARGETS, key=_cuda_arch_sort_key)
     arch_list[-1] = f"{arch_list[-1]}+PTX"
     return ";".join(arch_list)

@@ -18,6 +18,10 @@ class BazelSupportTest(unittest.TestCase):
                 bazel_support,
                 "detect_hip_include_paths",
                 return_value=[Path("/opt/rocm/include"), Path("/tmp/rocm-sdk/include")],
+            ), mock.patch.object(
+                bazel_support,
+                "detect_torch_cuda_arch_list",
+                return_value="8.9;12.0+PTX",
             ):
                 cpu_env = bazel_support.build_env_for_backend("cpu")
                 cuda_env = bazel_support.build_env_for_backend("cuda")
@@ -39,6 +43,7 @@ class BazelSupportTest(unittest.TestCase):
             f"/opt/rocm/include:/tmp/rocm-sdk/include",
         )
         self.assertEqual(vulkan_env["MMCV_WITH_OPS"], "0")
+        self.assertEqual(cuda_env["TORCH_CUDA_ARCH_LIST"], "8.9;12.0+PTX")
         self.assertNotIn("MAX_JOBS", cuda_env)
 
     def test_resolve_backend_uses_cpu_for_cpu_only_python(self) -> None:
@@ -118,33 +123,67 @@ class BazelSupportTest(unittest.TestCase):
             self.assertTrue((stage_root / "requirements" / "runtime.txt").is_file())
             self.assertFalse(any((stage_root / "mmcv").glob("_ext*.so")))
 
-    def test_detect_torch_cuda_arch_list_compacts_nvcc_arches_per_major(self) -> None:
-        nvcc_output = "\n".join([
-            "sm_75",
-            "sm_80",
-            "sm_86",
-            "sm_89",
-            "sm_90",
-            "sm_100",
-            "sm_103",
-            "sm_110",
-            "sm_120",
-            "sm_121",
-        ])
-        with mock.patch.object(
+    @staticmethod
+    def _nvcc_list_gpu_code(arches: list[str]):
+        return mock.patch.object(
             bazel_support.subprocess,
             "run",
             return_value=subprocess.CompletedProcess(
                 args=["nvcc", "--list-gpu-code"],
                 returncode=0,
-                stdout=nvcc_output,
+                stdout="\n".join(arches),
                 stderr="",
             ),
-        ):
+        )
+
+    def test_detect_torch_cuda_arch_list_targets_ada_and_blackwell(self) -> None:
+        cuda_13_arches = [
+            "sm_75",
+            "sm_80",
+            "sm_86",
+            "sm_87",
+            "sm_88",
+            "sm_89",
+            "sm_90",
+            "sm_100",
+            "sm_110",
+            "sm_103",
+            "sm_120",
+            "sm_121",
+        ]
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+            bazel_support, "find_nvcc", return_value="/usr/local/cuda/bin/nvcc"
+        ), self._nvcc_list_gpu_code(cuda_13_arches):
             self.assertEqual(
                 bazel_support.detect_torch_cuda_arch_list(),
-                "7.5;8.0;9.0;10.0;11.0;12.0+PTX",
+                "8.9;12.0+PTX",
             )
+
+    def test_detect_torch_cuda_arch_list_honours_overrides(self) -> None:
+        for name in ("MMCV_TORCH_CUDA_ARCH_LIST", "TORCH_CUDA_ARCH_LIST"):
+            with mock.patch.dict("os.environ", {name: "8.6"}, clear=True):
+                self.assertEqual(bazel_support.detect_torch_cuda_arch_list(), "8.6")
+
+    def test_detect_torch_cuda_arch_list_rejects_pre_blackwell_toolkit(self) -> None:
+        cuda_12_4_arches = ["sm_75", "sm_80", "sm_86", "sm_87", "sm_89", "sm_90"]
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+            bazel_support, "find_nvcc", return_value="/usr/local/cuda/bin/nvcc"
+        ), self._nvcc_list_gpu_code(cuda_12_4_arches):
+            with self.assertRaisesRegex(RuntimeError, r"12\.0"):
+                bazel_support.detect_torch_cuda_arch_list()
+
+    def test_build_env_for_backend_rejects_arch_flags_in_mmcv_cuda_args(self) -> None:
+        env = {"MMCV_CUDA_ARGS": "-gencode=arch=compute_61,code=sm_61"}
+        with mock.patch.dict("os.environ", env, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "MMCV_TORCH_CUDA_ARCH_LIST"):
+                bazel_support.build_env_for_backend("cuda")
+
+    def test_detect_torch_cuda_arch_list_requires_nvcc(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+            bazel_support, "find_nvcc", return_value=None
+        ):
+            with self.assertRaisesRegex(RuntimeError, "nvcc was not found"):
+                bazel_support.detect_torch_cuda_arch_list()
 
     def test_extract_backend_arg_recognizes_target_suffixes(self) -> None:
         script = """
