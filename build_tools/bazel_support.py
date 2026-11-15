@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from pathlib import Path
-from zipfile import ZipFile
-from types import SimpleNamespace
 import sys
+from pathlib import Path
+from types import SimpleNamespace
+from zipfile import ZipFile
 
 PROJECT_FILES = (
     "LICENSE",
@@ -39,11 +39,13 @@ VULKAN_MARKER = "mmcv_vulkan_build.txt"
 # Compute capabilities the CUDA extension ships device code for. A cubin runs
 # on later minor revisions of the same major revision but never on an earlier
 # one, so every distinct target needs its own entry:
+#   8.6  Ampere       - RTX 3060 Ti
 #   8.9  Ada Lovelace - RTX 4090
 #   12.0 Blackwell    - RTX 5070, RTX 5090
-# The highest target additionally emits PTX, letting later parts (sm_121 and
-# up) JIT rather than fail to load.
-CUDA_ARCH_TARGETS = ("8.9", "12.0")
+# Other supported GPUs use compute_75 PTX (Turing or newer, excluding V100).
+# CUDA's driver caches the JIT result. +PTX would also emit unwanted sm_75 SASS.
+CUDA_ARCH_TARGETS = ("8.6", "8.9", "12.0")
+CUDA_PTX_FLAG = "--generate-code=arch=compute_75,code=compute_75"
 
 
 def repo_root() -> Path:
@@ -76,9 +78,7 @@ def can_build_backend(backend: str) -> bool:
         except ImportError:
             return False
         return ROCM_HOME is not None or shutil.which("hipcc") is not None
-    if backend in {"cpu", "vulkan"}:
-        return True
-    return False
+    return backend in {"cpu", "vulkan"}
 
 
 def resolve_backend(requested: str) -> str:
@@ -134,7 +134,14 @@ def detect_hip_include_paths() -> list[Path]:
     version_dir = f"python{sys.version_info.major}.{sys.version_info.minor}"
     for prefix in (Path(sys.prefix), Path(sys.base_prefix)):
         candidates.append(prefix / "include")
-        candidates.append(prefix / "lib" / version_dir / "site-packages" / "_rocm_sdk_devel" / "include")
+        candidates.append(
+            prefix
+            / "lib"
+            / version_dir
+            / "site-packages"
+            / "_rocm_sdk_devel"
+            / "include"
+        )
 
     existing: list[Path] = []
     seen: set[str] = set()
@@ -170,7 +177,18 @@ def build_env_for_backend(backend: str) -> dict[str, str]:
                 "flag, which makes PyTorch ignore TORCH_CUDA_ARCH_LIST. Set "
                 "MMCV_TORCH_CUDA_ARCH_LIST instead to choose architectures."
             )
-        env.setdefault("TORCH_CUDA_ARCH_LIST", detect_torch_cuda_arch_list())
+        use_default_arches = not (
+            env.get("MMCV_TORCH_CUDA_ARCH_LIST") or env.get("TORCH_CUDA_ARCH_LIST")
+        )
+        env["TORCH_CUDA_ARCH_LIST"] = detect_torch_cuda_arch_list()
+        if use_default_arches:
+            # Passing an architecture flag through MMCV_CUDA_ARGS suppresses
+            # torch's native targets. nvcc's environment hook preserves them.
+            # Keep the default native list and PTX flag together: an explicit
+            # list replaces this policy, including the fallback.
+            env["NVCC_APPEND_FLAGS"] = " ".join(
+                filter(None, (env.get("NVCC_APPEND_FLAGS"), CUDA_PTX_FLAG))
+            )
     elif backend == "hip":
         env["MMCV_WITH_OPS"] = "1"
         env.pop("FORCE_CUDA", None)
@@ -316,16 +334,14 @@ def _cuda_arch_sort_key(arch: str) -> tuple[int, int]:
 
 
 def find_nvcc() -> str | None:
-    found = shutil.which("nvcc")
-    if found:
-        return found
+    # Match PyTorch's CUDA_HOME/CUDA_PATH precedence, including bld's toolkit.
     for root in (os.environ.get("CUDA_HOME"), os.environ.get("CUDA_PATH")):
         if not root:
             continue
         candidate = Path(root) / "bin" / "nvcc"
         if candidate.is_file():
             return str(candidate)
-    return None
+    return shutil.which("nvcc")
 
 
 def nvcc_supported_arches(nvcc: str) -> list[str]:
@@ -374,7 +390,7 @@ def detect_torch_cuda_arch_list() -> str:
         )
 
     supported = set(nvcc_supported_arches(nvcc))
-    missing = [arch for arch in CUDA_ARCH_TARGETS if arch not in supported]
+    missing = [arch for arch in (*CUDA_ARCH_TARGETS, "7.5") if arch not in supported]
     if missing:
         raise RuntimeError(
             f"{nvcc} cannot generate code for compute capability "
@@ -383,6 +399,4 @@ def detect_torch_cuda_arch_list() -> str:
             "architectures this toolkit supports."
         )
 
-    arch_list = sorted(CUDA_ARCH_TARGETS, key=_cuda_arch_sort_key)
-    arch_list[-1] = f"{arch_list[-1]}+PTX"
-    return ";".join(arch_list)
+    return ";".join(sorted(CUDA_ARCH_TARGETS, key=_cuda_arch_sort_key))

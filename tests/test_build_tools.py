@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,20 +16,19 @@ from build_tools import bazel_support
 class BazelSupportTest(unittest.TestCase):
 
     def test_build_env_for_backend_sets_expected_flags(self) -> None:
-        with mock.patch.dict("os.environ", {}, clear=True):
-            with mock.patch.object(
-                bazel_support,
-                "detect_hip_include_paths",
-                return_value=[Path("/opt/rocm/include"), Path("/tmp/rocm-sdk/include")],
-            ), mock.patch.object(
-                bazel_support,
-                "detect_torch_cuda_arch_list",
-                return_value="8.9;12.0+PTX",
-            ):
-                cpu_env = bazel_support.build_env_for_backend("cpu")
-                cuda_env = bazel_support.build_env_for_backend("cuda")
-                hip_env = bazel_support.build_env_for_backend("hip")
-                vulkan_env = bazel_support.build_env_for_backend("vulkan")
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+            bazel_support,
+            "detect_hip_include_paths",
+            return_value=[Path("/opt/rocm/include"), Path("/tmp/rocm-sdk/include")],
+        ), mock.patch.object(
+            bazel_support,
+            "detect_torch_cuda_arch_list",
+            return_value="8.6;8.9;12.0",
+        ):
+            cpu_env = bazel_support.build_env_for_backend("cpu")
+            cuda_env = bazel_support.build_env_for_backend("cuda")
+            hip_env = bazel_support.build_env_for_backend("hip")
+            vulkan_env = bazel_support.build_env_for_backend("vulkan")
 
         self.assertEqual(cpu_env["MMCV_WITH_OPS"], "1")
         self.assertNotIn("FORCE_CUDA", cpu_env)
@@ -36,28 +38,37 @@ class BazelSupportTest(unittest.TestCase):
         self.assertNotIn("FORCE_CUDA", hip_env)
         self.assertEqual(
             hip_env["CPATH"],
-            f"/opt/rocm/include:/tmp/rocm-sdk/include",
+            "/opt/rocm/include:/tmp/rocm-sdk/include",
         )
         self.assertEqual(
             hip_env["CPLUS_INCLUDE_PATH"],
-            f"/opt/rocm/include:/tmp/rocm-sdk/include",
+            "/opt/rocm/include:/tmp/rocm-sdk/include",
         )
         self.assertEqual(vulkan_env["MMCV_WITH_OPS"], "0")
-        self.assertEqual(cuda_env["TORCH_CUDA_ARCH_LIST"], "8.9;12.0+PTX")
+        self.assertEqual(cuda_env["TORCH_CUDA_ARCH_LIST"], "8.6;8.9;12.0")
         self.assertNotIn("MAX_JOBS", cuda_env)
+        self.assertEqual(cuda_env["NVCC_APPEND_FLAGS"], bazel_support.CUDA_PTX_FLAG)
+        for env in (cpu_env, hip_env, vulkan_env):
+            self.assertNotIn("NVCC_APPEND_FLAGS", env)
 
     def test_resolve_backend_uses_cpu_for_cpu_only_python(self) -> None:
-        with mock.patch.object(bazel_support, "detect_torch_backend", return_value="cpu"):
+        with mock.patch.object(
+            bazel_support, "detect_torch_backend", return_value="cpu"
+        ):
             self.assertEqual(bazel_support.resolve_backend("auto"), "cpu")
 
-    def test_resolve_backend_falls_back_to_cpu_when_accelerator_toolchain_is_missing(self) -> None:
-        with mock.patch.object(bazel_support, "detect_torch_backend", return_value="cuda"):
-            with mock.patch.object(bazel_support, "can_build_backend", return_value=False):
-                self.assertEqual(bazel_support.resolve_backend("auto"), "cpu")
+    def test_resolve_backend_falls_back_to_cpu_when_accelerator_toolchain_is_missing(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            bazel_support, "detect_torch_backend", return_value="cuda"
+        ), mock.patch.object(bazel_support, "can_build_backend", return_value=False):
+            self.assertEqual(bazel_support.resolve_backend("auto"), "cpu")
 
-        with mock.patch.object(bazel_support, "detect_torch_backend", return_value="hip"):
-            with mock.patch.object(bazel_support, "can_build_backend", return_value=True):
-                self.assertEqual(bazel_support.resolve_backend("auto"), "hip")
+        with mock.patch.object(
+            bazel_support, "detect_torch_backend", return_value="hip"
+        ), mock.patch.object(bazel_support, "can_build_backend", return_value=True):
+            self.assertEqual(bazel_support.resolve_backend("auto"), "hip")
 
     def test_overlay_hipified_sources_uses_hipify_result_mapping(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -66,7 +77,9 @@ class BazelSupportTest(unittest.TestCase):
             hip_root = temp_root / "hipified"
 
             original_kernel = stage_root / "mmcv/ops/csrc/pytorch/cuda/example_cuda.cu"
-            original_header = stage_root / "mmcv/ops/csrc/common/cuda/pytorch_cuda_helper.hpp"
+            original_header = (
+                stage_root / "mmcv/ops/csrc/common/cuda/pytorch_cuda_helper.hpp"
+            )
             original_info = stage_root / "mmcv/ops/csrc/pytorch/info.cpp"
             for path in (original_kernel, original_header, original_info):
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,8 +98,12 @@ class BazelSupportTest(unittest.TestCase):
             written = bazel_support.overlay_hipified_sources(
                 stage_root,
                 {
-                    str(original_kernel): SimpleNamespace(hipified_path=str(hip_kernel)),
-                    str(original_header): SimpleNamespace(hipified_path=str(hip_header)),
+                    str(original_kernel): SimpleNamespace(
+                        hipified_path=str(hip_kernel)
+                    ),
+                    str(original_header): SimpleNamespace(
+                        hipified_path=str(hip_header)
+                    ),
                     str(original_info): SimpleNamespace(hipified_path=str(hip_info)),
                 },
             )
@@ -104,7 +121,9 @@ class BazelSupportTest(unittest.TestCase):
             )
             self.assertEqual(original_info.read_text(encoding="utf-8"), "// hip info\n")
 
-    def test_stage_project_tree_copies_required_files_and_skips_built_extensions(self) -> None:
+    def test_stage_project_tree_copies_required_files_and_skips_built_extensions(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             source_root = temp_root / "source"
@@ -112,9 +131,15 @@ class BazelSupportTest(unittest.TestCase):
             (source_root / "mmcv").mkdir(parents=True)
             (source_root / "requirements").mkdir(parents=True)
             (source_root / "setup.py").write_text("print('setup')\n", encoding="utf-8")
-            (source_root / "mmcv" / "__init__.py").write_text("__all__ = []\n", encoding="utf-8")
-            (source_root / "mmcv" / "_ext.cpython-312-x86_64-linux-gnu.so").write_text("binary\n", encoding="utf-8")
-            (source_root / "requirements" / "runtime.txt").write_text("numpy\n", encoding="utf-8")
+            (source_root / "mmcv" / "__init__.py").write_text(
+                "__all__ = []\n", encoding="utf-8"
+            )
+            (source_root / "mmcv" / "_ext.cpython-312-x86_64-linux-gnu.so").write_text(
+                "binary\n", encoding="utf-8"
+            )
+            (source_root / "requirements" / "runtime.txt").write_text(
+                "numpy\n", encoding="utf-8"
+            )
 
             bazel_support.stage_project_tree(source_root, stage_root)
 
@@ -136,7 +161,7 @@ class BazelSupportTest(unittest.TestCase):
             ),
         )
 
-    def test_detect_torch_cuda_arch_list_targets_ada_and_blackwell(self) -> None:
+    def test_detect_torch_cuda_arch_list_targets_three_rtx_generations(self) -> None:
         cuda_13_arches = [
             "sm_75",
             "sm_80",
@@ -156,7 +181,7 @@ class BazelSupportTest(unittest.TestCase):
         ), self._nvcc_list_gpu_code(cuda_13_arches):
             self.assertEqual(
                 bazel_support.detect_torch_cuda_arch_list(),
-                "8.9;12.0+PTX",
+                "8.6;8.9;12.0",
             )
 
     def test_detect_torch_cuda_arch_list_honours_overrides(self) -> None:
@@ -164,26 +189,109 @@ class BazelSupportTest(unittest.TestCase):
             with mock.patch.dict("os.environ", {name: "8.6"}, clear=True):
                 self.assertEqual(bazel_support.detect_torch_cuda_arch_list(), "8.6")
 
+    def test_find_nvcc_prefers_selected_toolkit_over_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            nvcc = Path(tmp) / "bin/nvcc"
+            nvcc.parent.mkdir()
+            nvcc.touch()
+            with mock.patch.dict(
+                "os.environ", {"CUDA_HOME": tmp}, clear=True
+            ), mock.patch.object(
+                bazel_support.shutil, "which", return_value="/old/cuda/bin/nvcc"
+            ):
+                self.assertEqual(bazel_support.find_nvcc(), str(nvcc))
+
     def test_detect_torch_cuda_arch_list_rejects_pre_blackwell_toolkit(self) -> None:
         cuda_12_4_arches = ["sm_75", "sm_80", "sm_86", "sm_87", "sm_89", "sm_90"]
         with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
             bazel_support, "find_nvcc", return_value="/usr/local/cuda/bin/nvcc"
-        ), self._nvcc_list_gpu_code(cuda_12_4_arches):
-            with self.assertRaisesRegex(RuntimeError, r"12\.0"):
-                bazel_support.detect_torch_cuda_arch_list()
+        ), self._nvcc_list_gpu_code(cuda_12_4_arches), self.assertRaisesRegex(
+            RuntimeError, r"12\.0"
+        ):
+            bazel_support.detect_torch_cuda_arch_list()
 
     def test_build_env_for_backend_rejects_arch_flags_in_mmcv_cuda_args(self) -> None:
         env = {"MMCV_CUDA_ARGS": "-gencode=arch=compute_61,code=sm_61"}
-        with mock.patch.dict("os.environ", env, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "MMCV_TORCH_CUDA_ARCH_LIST"):
-                bazel_support.build_env_for_backend("cuda")
+        with mock.patch.dict("os.environ", env, clear=True), self.assertRaisesRegex(
+            RuntimeError, "MMCV_TORCH_CUDA_ARCH_LIST"
+        ):
+            bazel_support.build_env_for_backend("cuda")
+
+    def test_cuda_defaults_preserve_existing_nvcc_flags(self) -> None:
+        with mock.patch.dict(
+            "os.environ", {"NVCC_APPEND_FLAGS": "-lineinfo"}, clear=True
+        ), mock.patch.object(
+            bazel_support, "detect_torch_cuda_arch_list", return_value="8.6;8.9;12.0"
+        ):
+            env = bazel_support.build_env_for_backend("cuda")
+        self.assertEqual(
+            env["NVCC_APPEND_FLAGS"], f"-lineinfo {bazel_support.CUDA_PTX_FLAG}"
+        )
+
+    def test_cuda_arch_override_replaces_default_ptx_policy(self) -> None:
+        for override in (
+            {"TORCH_CUDA_ARCH_LIST": "8.7+PTX"},
+            {"MMCV_TORCH_CUDA_ARCH_LIST": "8.7+PTX", "TORCH_CUDA_ARCH_LIST": "8.9"},
+        ):
+            with mock.patch.dict(
+                "os.environ", {**override, "NVCC_APPEND_FLAGS": "-lineinfo"}, clear=True
+            ):
+                env = bazel_support.build_env_for_backend("cuda")
+            self.assertEqual(env["TORCH_CUDA_ARCH_LIST"], "8.7+PTX")
+            self.assertEqual(env["NVCC_APPEND_FLAGS"], "-lineinfo")
+
+    def test_cuda_defaults_require_fallback_architecture(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+            bazel_support, "find_nvcc", return_value="nvcc"
+        ), self._nvcc_list_gpu_code(
+            ["sm_86", "sm_89", "sm_120"]
+        ), self.assertRaisesRegex(
+            RuntimeError, r"7\.5"
+        ):
+            bazel_support.build_env_for_backend("cuda")
+
+    def test_bld_passes_shared_policy_and_preserves_arguments(self) -> None:
+        # Run the real launcher against an isolated setup recorder, never build
+        # or install the extension in the test interpreter.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = Path(__file__).resolve().parents[1]
+            shutil.copy2(source / "bld", root / "bld")
+            shutil.copytree(source / "build_tools", root / "build_tools")
+            (root / "setup.py").write_text(
+                "import json, os, sys\nprint(json.dumps(dict(env=dict(os.environ), args=sys.argv[1:])))\n"
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "python").symlink_to(sys.executable)
+            nvcc = bin_dir / "nvcc"
+            nvcc.write_text("#!/bin/sh\nprintf '%s\\n' sm_75 sm_86 sm_89 sm_120\n")
+            nvcc.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(root / "bld"), "--prefix", "path with spaces"],
+                cwd="/",
+                env={
+                    "PATH": f"{bin_dir}:/usr/bin:/bin",
+                    "MAX_JOBS": "2",
+                    "CUDA_HOME": str(root),
+                },
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        captured = json.loads(result.stdout)
+        self.assertEqual(captured["args"], ["develop", "--prefix", "path with spaces"])
+        self.assertEqual(captured["env"]["TORCH_CUDA_ARCH_LIST"], "8.6;8.9;12.0")
+        self.assertEqual(
+            captured["env"]["NVCC_APPEND_FLAGS"], bazel_support.CUDA_PTX_FLAG
+        )
+        self.assertEqual(captured["env"]["MAX_JOBS"], "2")
 
     def test_detect_torch_cuda_arch_list_requires_nvcc(self) -> None:
         with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
             bazel_support, "find_nvcc", return_value=None
-        ):
-            with self.assertRaisesRegex(RuntimeError, "nvcc was not found"):
-                bazel_support.detect_torch_cuda_arch_list()
+        ), self.assertRaisesRegex(RuntimeError, "nvcc was not found"):
+            bazel_support.detect_torch_cuda_arch_list()
 
     def test_extract_backend_arg_recognizes_target_suffixes(self) -> None:
         script = """
@@ -200,7 +308,9 @@ extract_backend_arg //:build_ext_cpu
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip().splitlines(), ["cuda", "hip", "vulkan", "cpu"])
+        self.assertEqual(
+            result.stdout.strip().splitlines(), ["cuda", "hip", "vulkan", "cpu"]
+        )
 
 
 if __name__ == "__main__":
