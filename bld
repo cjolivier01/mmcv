@@ -1,1 +1,22 @@
-MAX_JOBS=$(nproc) TORCH_CUDA_ARCH_LIST="8.9;12.0+PTX" MMCV_WITH_CUDA=1 MMCV_WITH_OPS=1 python setup.py develop $@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+export MAX_JOBS="${MAX_JOBS:-$(nproc)}"
+export MMCV_WITH_CUDA=1 MMCV_WITH_OPS=1
+
+# Share the CUDA policy with the Bazel entrypoints, while retaining setup.py's
+# develop command and argument handling.
+exec python - "$@" <<'PY'
+import os
+import sys
+
+from build_tools.bazel_support import build_env_for_backend
+
+os.execve(
+    sys.executable,
+    [sys.executable, "setup.py", "develop", *sys.argv[1:]],
+    build_env_for_backend("cuda"),
+)
+PY

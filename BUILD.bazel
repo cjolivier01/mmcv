@@ -26,6 +26,7 @@ sh_test(
         "tests/test_build_tools.py",
     ]) + [
         ".bazel_setup.sh",
+        "bld",
     ],
 )
 
